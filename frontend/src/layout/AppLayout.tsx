@@ -58,13 +58,13 @@ export function AppLayout() {
 
       <div className="main-area">
         <header className="topbar">
-          <div>
+          <div className="topbar-intro">
             <p className="eyebrow">Production Compliance Software</p>
             <h1>AI Receipt-to-Claim Discrepancy Platform</h1>
             <p>Enterprise control surface for reimbursement governance, audit evidence, and investigation workflows.</p>
           </div>
           <div className="topbar-user">
-            <div>
+            <div className="topbar-identity">
               <strong>{user?.full_name}</strong>
               <p>{user?.username}</p>
               <span className="role-pill">{user?.role}</span>
