@@ -2,6 +2,7 @@ import dayjs from 'dayjs'
 import { useEffect, useMemo, useState } from 'react'
 import { fetchEmployeeRiskDashboard } from '../api/client'
 import { AnalyzeIcon, ClaimsIcon, EmployeeIcon, RiskIcon, UsersIcon, WrongClaimIcon } from '../components/BrandIcons'
+import { CollapsiblePanel } from '../components/CollapsiblePanel'
 import { EmployeeRiskDashboard, EmployeeRiskProfile } from '../types'
 import { formatDetectionType } from '../utils/formatters'
 
@@ -230,7 +231,7 @@ export function EmployeeRiskInsightsPage() {
 
   return (
     <div className="app-page employee-risk-page">
-      <section className="panel hero-panel employee-risk-hero">
+      <CollapsiblePanel className="panel hero-panel employee-risk-hero">
         <div>
           <p className="eyebrow">HR Manager Analytics</p>
           <h2>Employee Risk Intelligence</h2>
@@ -252,9 +253,9 @@ export function EmployeeRiskInsightsPage() {
             detail={`${dashboard.high_risk_employees} high-risk employees across ${dashboard.total_employees}`}
           />
         </div>
-      </section>
+      </CollapsiblePanel>
 
-      <section className="panel employee-risk-spotlight">
+      <CollapsiblePanel className="panel employee-risk-spotlight" title="Employee Risk Spotlight">
         <SpotlightCard
           title="Highest Risk Employee"
           subtitle="Composite exposure"
@@ -284,9 +285,9 @@ export function EmployeeRiskInsightsPage() {
           tone={spotlightSpend ? toneForRisk(spotlightSpend.employee_risk_level) : 'low'}
           detail={spotlightSpend ? `Average claim ${currencyFormatter.format(spotlightSpend.avg_claim_amount)} · ${spotlightSpend.total_claims} claims` : '-'}
         />
-      </section>
+      </CollapsiblePanel>
 
-      <section className="panel">
+      <CollapsiblePanel className="panel" title="Risk Portfolio KPIs">
         <div className="metric-grid employee-risk-kpis">
           <article className="metric-card">
             <div className="metric-line"><span>Employees Monitored</span><UsersIcon className="metric-icon" /></div>
@@ -321,9 +322,9 @@ export function EmployeeRiskInsightsPage() {
             <strong>{dashboard.avg_trip_duration_days} days</strong>
           </article>
         </div>
-      </section>
+      </CollapsiblePanel>
 
-      <section className="panel">
+      <CollapsiblePanel className="panel" title="Filter Controls">
         <div className="insights-filter-grid">
           <label>
             Search Employee / Detection
@@ -355,9 +356,9 @@ export function EmployeeRiskInsightsPage() {
             </select>
           </label>
         </div>
-      </section>
+      </CollapsiblePanel>
 
-      <section className="panel two-col app-grow">
+      <CollapsiblePanel className="panel two-col app-grow" allowFocusView>
         <article className="panel-scroll">
           <h3>Employees With Most Violations</h3>
           {topViolationEmployees.length === 0 && <p className="empty-muted">No employees match current filters.</p>}
@@ -389,9 +390,9 @@ export function EmployeeRiskInsightsPage() {
             />
           ))}
         </article>
-      </section>
+      </CollapsiblePanel>
 
-      <section className="panel two-col app-grow">
+      <CollapsiblePanel className="panel two-col app-grow" allowFocusView>
         <article className="panel-scroll">
           <h3>Highest Employee Risk Index</h3>
           {topRiskEmployees.length === 0 && <p className="empty-muted">No employees match current filters.</p>}
@@ -422,9 +423,9 @@ export function EmployeeRiskInsightsPage() {
             />
           ))}
         </article>
-      </section>
+      </CollapsiblePanel>
 
-      <section className="panel table-panel app-grow">
+      <CollapsiblePanel className="panel table-panel app-grow" allowFocusView>
         <div className="panel-head">
           <div>
             <h3>Employee Risk Scorecard</h3>
@@ -487,7 +488,7 @@ export function EmployeeRiskInsightsPage() {
             </tbody>
           </table>
         </div>
-      </section>
+      </CollapsiblePanel>
     </div>
   )
 }

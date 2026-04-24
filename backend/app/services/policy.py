@@ -77,6 +77,14 @@ DEFAULT_RULES = [
         "weight": None,
     },
     {
+        "key": "location_adjusted_threshold_pct",
+        "name": "Location-Adjusted Mean Threshold Percentage",
+        "category": "threshold",
+        "threshold": 12.0,
+        "unit": "pct",
+        "weight": None,
+    },
+    {
         "key": "outlier_min_sample_size",
         "name": "Outlier Minimum Sample Size",
         "category": "system",
@@ -105,21 +113,68 @@ DEFAULT_RULES = [
     {"key": "weight_amount_outlier_abnormality", "name": "Weight Amount Outlier Abnormality", "category": "weight", "threshold": None, "unit": "score", "weight": 22.0},
     {"key": "weight_trip_duration_outlier_abnormality", "name": "Weight Trip Duration Outlier Abnormality", "category": "weight", "threshold": None, "unit": "score", "weight": 12.0},
     {"key": "weight_amount_above_peer_mean_threshold", "name": "Weight Amount Above Peer Mean Threshold", "category": "weight", "threshold": None, "unit": "score", "weight": 16.0},
+    {"key": "weight_location_cost_anomaly", "name": "Weight Location Cost Anomaly", "category": "weight", "threshold": None, "unit": "score", "weight": 14.0},
 ]
 
+
+DEFAULT_CITY_BENCHMARK_SAR = 700.0
 
 CITY_HOTEL_BENCHMARK_SAR = {
     "Riyadh": 650.0,
     "Jeddah": 600.0,
     "Dammam": 550.0,
+    "Khobar": 590.0,
+    "Jubail": 570.0,
     "Dubai": 850.0,
     "Abu Dhabi": 780.0,
+    "Amsterdam": 910.0,
     "London": 920.0,
     "Paris": 900.0,
     "Berlin": 760.0,
+    "Madrid": 800.0,
     "Singapore": 890.0,
+    "Phoenix": 740.0,
     "New York": 980.0,
 }
+
+COUNTRY_COST_FACTOR = {
+    "Saudi Arabia": 1.0,
+    "United Arab Emirates": 1.22,
+    "Netherlands": 1.3,
+    "United Kingdom": 1.34,
+    "Spain": 1.18,
+    "France": 1.29,
+    "Germany": 1.16,
+    "United States": 1.27,
+    "Singapore": 1.31,
+}
+
+LOCATION_ALIASES = {
+    "ksa": "Saudi Arabia",
+    "saudi arabia": "Saudi Arabia",
+    "uae": "United Arab Emirates",
+    "u.a.e": "United Arab Emirates",
+    "united arab emirates": "United Arab Emirates",
+    "u.k.": "United Kingdom",
+    "uk": "United Kingdom",
+    "united kingdom": "United Kingdom",
+    "u.s.a": "United States",
+    "usa": "United States",
+    "united states": "United States",
+    "netherlands": "Netherlands",
+}
+
+
+def _normalized_location_key(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    raw_value = value.strip()
+    if not raw_value:
+        return None
+    alias = LOCATION_ALIASES.get(raw_value.casefold())
+    if alias:
+        return alias
+    return raw_value.title()
 
 
 def seed_default_policies(db: Session) -> None:
@@ -163,9 +218,31 @@ def get_detection_weight(policy_map: dict[str, PolicyRule], detection_type: str,
 
 
 def get_city_benchmark(city: Optional[str]) -> Optional[float]:
-    if not city:
+    normalized_city = _normalized_location_key(city)
+    if not normalized_city:
         return None
-    return CITY_HOTEL_BENCHMARK_SAR.get(city.title())
+    return CITY_HOTEL_BENCHMARK_SAR.get(normalized_city)
+
+
+def get_location_cost_factor(
+    *,
+    country: Optional[str],
+    city: Optional[str],
+    trip_boundary: Optional[str],
+) -> float:
+    normalized_city = _normalized_location_key(city)
+    normalized_country = _normalized_location_key(country)
+    city_benchmark = CITY_HOTEL_BENCHMARK_SAR.get(normalized_city) if normalized_city else None
+
+    if city_benchmark is not None:
+        factor = city_benchmark / DEFAULT_CITY_BENCHMARK_SAR
+    elif normalized_country and normalized_country in COUNTRY_COST_FACTOR:
+        factor = COUNTRY_COST_FACTOR[normalized_country]
+    else:
+        boundary_value = (trip_boundary or "").strip().casefold()
+        factor = 1.18 if "international" in boundary_value else 1.0
+
+    return round(min(1.8, max(0.72, float(factor))), 3)
 
 
 RISK_DETECTION_MODE_CODES = {

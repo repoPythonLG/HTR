@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { fetchPolicyRules, fetchRiskSettings, fetchUsers, updateRiskSettings, upsertPolicyRule } from '../api/client'
 import { AnalyzeIcon, PolicyIcon, RiskIcon, UsersIcon } from '../components/BrandIcons'
+import { CollapsiblePanel } from '../components/CollapsiblePanel'
 import { CurrentUser, PolicyRule, RiskSettings } from '../types'
 
 export function AdminConsolePage() {
@@ -69,7 +70,7 @@ export function AdminConsolePage() {
 
   return (
     <div className="app-page admin-page">
-      <section className="panel">
+      <CollapsiblePanel className="panel">
         <div className="panel-head">
           <div>
             <h2 className="section-title"><RiskIcon size={18} />Risk Detection Settings</h2>
@@ -130,11 +131,28 @@ export function AdminConsolePage() {
             />
           </label>
 
+          <label>
+            Location-Adjusted Threshold Percentage
+            <input
+              type="number"
+              min={0}
+              max={500}
+              step="0.1"
+              value={riskSettings.location_adjusted_threshold_pct}
+              onChange={(e) =>
+                setRiskSettings({
+                  ...riskSettings,
+                  location_adjusted_threshold_pct: Number(e.target.value || 0)
+                })
+              }
+            />
+          </label>
+
           <button type="submit"><span className="btn-inline"><AnalyzeIcon size={14} />Save Risk Settings</span></button>
         </form>
-      </section>
+      </CollapsiblePanel>
 
-      <section className="panel two-col app-grow">
+      <CollapsiblePanel className="panel two-col app-grow" allowFocusView>
         <article className="panel-scroll">
           <h2 className="section-title"><PolicyIcon size={18} />Policy Engine Configuration</h2>
           {message && <div className="success-box">{message}</div>}
@@ -222,9 +240,9 @@ export function AdminConsolePage() {
             <button type="submit"><span className="btn-inline"><PolicyIcon size={14} />Save Rule</span></button>
           </form>
         </article>
-      </section>
+      </CollapsiblePanel>
 
-      <section className="panel table-panel app-grow">
+      <CollapsiblePanel className="panel table-panel app-grow" allowFocusView>
         <h3 className="section-title"><UsersIcon size={16} />User and Role Registry</h3>
         <div className="table-wrap table-fill-wrap">
           <table className="table professional-table">
@@ -250,7 +268,7 @@ export function AdminConsolePage() {
             </tbody>
           </table>
         </div>
-      </section>
+      </CollapsiblePanel>
     </div>
   )
 }

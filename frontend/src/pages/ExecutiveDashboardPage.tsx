@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchEmployeeDashboard, fetchExecutiveDashboard } from '../api/client'
 import { AnalyzeIcon, ClaimsIcon, RiskIcon, WrongClaimIcon } from '../components/BrandIcons'
+import { CollapsiblePanel } from '../components/CollapsiblePanel'
 import { useAuth } from '../context/AuthContext'
 import { EmployeeDashboard, ExecutiveDashboard } from '../types'
 import { formatDetectionType } from '../utils/formatters'
@@ -43,15 +44,15 @@ export function ExecutiveDashboardPage() {
     if (!employee) return <div className="panel">Loading employee dashboard...</div>
     return (
       <div className="app-page executive-page">
-        <section className="panel hero-panel">
+        <CollapsiblePanel className="panel hero-panel">
           <div>
             <p className="eyebrow">Employee Performance</p>
             <h2>My Reimbursement Portfolio</h2>
             <p>Track your submission health and flagged claims in real time.</p>
           </div>
-        </section>
+        </CollapsiblePanel>
 
-        <section className="panel app-grow">
+        <CollapsiblePanel className="panel app-grow" title="Employee Claim Metrics">
           <div className="metric-grid">
             <article className="metric-card">
               <div className="metric-line"><span>Total Claims</span><ClaimsIcon className="metric-icon" /></div>
@@ -70,7 +71,7 @@ export function ExecutiveDashboardPage() {
               <strong>{employee.suspicious_claims}</strong>
             </article>
           </div>
-        </section>
+        </CollapsiblePanel>
       </div>
     )
   }
@@ -89,7 +90,7 @@ export function ExecutiveDashboardPage() {
 
   return (
     <div className="app-page executive-page">
-      <section className="panel hero-panel">
+      <CollapsiblePanel className="panel hero-panel">
         <div>
           <p className="eyebrow">Corporate Compliance Center</p>
           <h2>Reimbursement Control Dashboard</h2>
@@ -100,9 +101,9 @@ export function ExecutiveDashboardPage() {
           <strong>{qualityIndex}</strong>
           <p>/ 100</p>
         </div>
-      </section>
+      </CollapsiblePanel>
 
-      <section className="panel">
+      <CollapsiblePanel className="panel" title="Portfolio Performance Metrics">
         <div className="metric-grid">
           <article className="metric-card">
             <div className="metric-line"><span>Total Claims</span><ClaimsIcon className="metric-icon" /></div>
@@ -129,9 +130,9 @@ export function ExecutiveDashboardPage() {
             <strong>{executive.wrong_claim_rate_pct}%</strong>
           </article>
         </div>
-      </section>
+      </CollapsiblePanel>
 
-      <section className="panel two-col panel-scroll">
+      <CollapsiblePanel className="panel two-col panel-scroll" allowFocusView>
         <article>
           <h3>Risk Band Distribution</h3>
           {riskRows.length === 0 && <p className="empty-muted">No analyzed claims yet.</p>}
@@ -159,9 +160,9 @@ export function ExecutiveDashboardPage() {
             />
           ))}
         </article>
-      </section>
+      </CollapsiblePanel>
 
-      <section className="panel table-panel app-grow">
+      <CollapsiblePanel className="panel table-panel app-grow" allowFocusView>
         <div className="panel-head">
           <h3>Top Detection Drivers</h3>
           <p>Most common discrepancies currently driving risk score escalation.</p>
@@ -190,7 +191,7 @@ export function ExecutiveDashboardPage() {
             </tbody>
           </table>
         </div>
-      </section>
+      </CollapsiblePanel>
     </div>
   )
 }

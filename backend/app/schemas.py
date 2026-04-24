@@ -229,12 +229,14 @@ class RiskSettingsIn(BaseModel):
     detection_mode: str = Field(pattern="^(outlier|mean_threshold|combined)$")
     mean_threshold_pct: float = Field(ge=0, le=500)
     outlier_min_sample_size: int = Field(ge=3, le=500)
+    location_adjusted_threshold_pct: float = Field(ge=0, le=500)
 
 
 class RiskSettingsOut(BaseModel):
     detection_mode: str
     mean_threshold_pct: float
     outlier_min_sample_size: int
+    location_adjusted_threshold_pct: float
 
 
 class ExtractedPolicySuggestion(BaseModel):
@@ -336,3 +338,51 @@ class ClaimAnalysisOut(BaseModel):
     findings: List[AnalysisFindingOut]
     evidence_summary: List[Dict[str, Any]]
     recommendations: List[str]
+
+
+class OutlierMetricOptionOut(BaseModel):
+    key: str
+    label: str
+
+
+class OutlierMapPointOut(BaseModel):
+    claim_id: str
+    employee_id: str
+    employee_name: str
+    department: str
+    to_country: Optional[str]
+    to_city: Optional[str]
+    location_cost_factor: float
+    x_value: float
+    y_value: float
+    x_zscore: float
+    y_zscore: float
+    distance_score: float
+    cluster_id: int
+    outlier_flag: bool
+    outlier_reasons: List[str]
+    suspicious_flag: bool
+    incorrect_flag: bool
+    risk_level: Optional[str]
+    risk_score: Optional[float]
+    detection_count: int
+
+
+class OutlierClusterSummaryOut(BaseModel):
+    cluster_id: int
+    label: str
+    point_count: int
+    centroid_x: float
+    centroid_y: float
+
+
+class OutlierMapDashboardOut(BaseModel):
+    x_metric: str
+    y_metric: str
+    x_label: str
+    y_label: str
+    total_points: int
+    outlier_points: int
+    metric_options: List[OutlierMetricOptionOut]
+    clusters: List[OutlierClusterSummaryOut]
+    points: List[OutlierMapPointOut]

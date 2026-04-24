@@ -5,6 +5,7 @@ import {
   ClaimDetail,
   ClaimSummary,
   CurrentUser,
+  OutlierMapDashboard,
   EmployeeDashboard,
   EmployeeRiskDashboard,
   ExcelImportResult,
@@ -158,6 +159,16 @@ export async function fetchEmployeeDashboard(): Promise<EmployeeDashboard> {
 
 export async function fetchEmployeeRiskDashboard(): Promise<EmployeeRiskDashboard> {
   const response = await api.get<EmployeeRiskDashboard>('/dashboards/employee-risk')
+  return response.data
+}
+
+export async function fetchOutlierMapDashboard(params?: { xMetric?: string; yMetric?: string }): Promise<OutlierMapDashboard> {
+  const response = await api.get<OutlierMapDashboard>('/dashboards/outlier-map', {
+    params: {
+      x_metric: params?.xMetric,
+      y_metric: params?.yMetric,
+    }
+  })
   return response.data
 }
 

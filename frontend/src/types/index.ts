@@ -270,4 +270,53 @@ export type RiskSettings = {
   detection_mode: 'outlier' | 'mean_threshold' | 'combined'
   mean_threshold_pct: number
   outlier_min_sample_size: number
+  location_adjusted_threshold_pct: number
+}
+
+export type OutlierMetricOption = {
+  key: string
+  label: string
+}
+
+export type OutlierMapPoint = {
+  claim_id: string
+  employee_id: string
+  employee_name: string
+  department: string
+  to_country?: string | null
+  to_city?: string | null
+  location_cost_factor: number
+  x_value: number
+  y_value: number
+  x_zscore: number
+  y_zscore: number
+  distance_score: number
+  cluster_id: number
+  outlier_flag: boolean
+  outlier_reasons: string[]
+  suspicious_flag: boolean
+  incorrect_flag: boolean
+  risk_level?: string | null
+  risk_score?: number | null
+  detection_count: number
+}
+
+export type OutlierClusterSummary = {
+  cluster_id: number
+  label: string
+  point_count: number
+  centroid_x: number
+  centroid_y: number
+}
+
+export type OutlierMapDashboard = {
+  x_metric: string
+  y_metric: string
+  x_label: string
+  y_label: string
+  total_points: number
+  outlier_points: number
+  metric_options: OutlierMetricOption[]
+  clusters: OutlierClusterSummary[]
+  points: OutlierMapPoint[]
 }

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { analyzeClaim, fetchClaims } from '../api/client'
 import { AnalyzeIcon, ClaimsIcon, DocumentIcon, RefreshIcon, RiskIcon, WrongClaimIcon } from '../components/BrandIcons'
+import { CollapsiblePanel } from '../components/CollapsiblePanel'
 import { ClaimSummary } from '../types'
 import { formatDetectionType } from '../utils/formatters'
 
@@ -94,7 +95,7 @@ export function ClaimsWorkbenchPage() {
 
   return (
     <div className="app-page claims-workbench-page">
-      <section className="panel claims-workbench-panel app-grow">
+      <CollapsiblePanel className="panel claims-workbench-panel app-grow" allowFocusView>
         <div className="claims-workbench-controls">
           <div className="panel-head">
             <div>
@@ -248,7 +249,7 @@ export function ClaimsWorkbenchPage() {
             </tbody>
           </table>
         </div>
-      </section>
+      </CollapsiblePanel>
     </div>
   )
 }

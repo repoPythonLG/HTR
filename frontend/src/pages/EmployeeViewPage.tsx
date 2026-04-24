@@ -2,6 +2,7 @@ import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import { fetchEmployeeDashboard } from '../api/client'
 import { AnalyzeIcon, ClaimsIcon, EmployeeIcon, RiskIcon } from '../components/BrandIcons'
+import { CollapsiblePanel } from '../components/CollapsiblePanel'
 import { EmployeeDashboard } from '../types'
 
 export function EmployeeViewPage() {
@@ -17,7 +18,7 @@ export function EmployeeViewPage() {
 
   return (
     <div className="app-page employee-page">
-      <section className="panel">
+      <CollapsiblePanel className="panel">
         <h2 className="section-title"><EmployeeIcon size={18} />Employee Claim Visibility</h2>
         <div className="metric-grid">
           <article className="metric-card">
@@ -41,9 +42,9 @@ export function EmployeeViewPage() {
             <strong>{data.suspicious_claims}</strong>
           </article>
         </div>
-      </section>
+      </CollapsiblePanel>
 
-      <section className="panel table-panel app-grow">
+      <CollapsiblePanel className="panel table-panel app-grow" allowFocusView>
         <h3 className="section-title"><ClaimsIcon size={16} />Recent Claims</h3>
         <div className="table-wrap table-fill-wrap">
           <table className="table professional-table">
@@ -69,7 +70,7 @@ export function EmployeeViewPage() {
             </tbody>
           </table>
         </div>
-      </section>
+      </CollapsiblePanel>
     </div>
   )
 }

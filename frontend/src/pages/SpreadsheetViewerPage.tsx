@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { fetchActiveImportPreview } from '../api/client'
+import { CollapsiblePanel } from '../components/CollapsiblePanel'
 import { SpreadsheetPreview } from '../types'
 
 export function SpreadsheetViewerPage() {
@@ -20,12 +21,12 @@ export function SpreadsheetViewerPage() {
 
   return (
     <div className="app-page spreadsheet-page">
-      <section className="panel">
+      <CollapsiblePanel className="panel">
         <h2>Spreadsheet Viewer</h2>
         <p>{preview.file_name} · Rows shown: {preview.total_rows}</p>
-      </section>
+      </CollapsiblePanel>
 
-      <section className="panel table-panel app-grow">
+      <CollapsiblePanel className="panel table-panel app-grow" title="Spreadsheet Data Table" allowFocusView>
         {preview.columns.length === 0 && <p className="empty-muted">No spreadsheet rows to display.</p>}
         {preview.columns.length > 0 && (
           <div className="table-wrap table-fill-wrap">
@@ -49,7 +50,7 @@ export function SpreadsheetViewerPage() {
             </table>
           </div>
         )}
-      </section>
+      </CollapsiblePanel>
     </div>
   )
 }

@@ -3,6 +3,7 @@ import { FormEvent, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { fetchClaimAnalysis, fetchClaimDetail, getDocumentUrl, submitReviewAction } from '../api/client'
 import { AnalyzeIcon, ClaimsIcon, DocumentIcon, RiskIcon, WrongClaimIcon } from '../components/BrandIcons'
+import { CollapsiblePanel } from '../components/CollapsiblePanel'
 import { useAuth } from '../context/AuthContext'
 import { ClaimAnalysis, ClaimDetail } from '../types'
 import { formatDetectionType } from '../utils/formatters'
@@ -68,7 +69,7 @@ export function ClaimAnalysisPage() {
 
   return (
     <div className="app-page analysis-page">
-      <section className="panel hero-panel">
+      <CollapsiblePanel className="panel hero-panel">
         <div>
           <p className="eyebrow">Claim Investigation Workspace</p>
           <h2>Claim {analysis.claim_id}</h2>
@@ -81,9 +82,9 @@ export function ClaimAnalysisPage() {
           <strong>{analysis.risk_score.toFixed(1)} pts</strong>
           <Link className="text-link" to="/claims">Back to Workbench</Link>
         </div>
-      </section>
+      </CollapsiblePanel>
 
-      <section className="panel">
+      <CollapsiblePanel className="panel" title="Investigation Snapshot">
         <div className="metric-grid compact">
           <article className="metric-card">
             <div className="metric-line"><span>Primary Red Flag</span><RiskIcon className="metric-icon" /></div>
@@ -102,9 +103,9 @@ export function ClaimAnalysisPage() {
             <strong>{analysis.findings.length}</strong>
           </article>
         </div>
-      </section>
+      </CollapsiblePanel>
 
-      <section className="panel table-panel app-grow">
+      <CollapsiblePanel className="panel table-panel app-grow" allowFocusView>
         <h3 className="section-title"><AnalyzeIcon size={16} />Findings Matrix</h3>
         <div className="table-wrap table-fill-wrap">
           <table className="table professional-table">
@@ -132,9 +133,9 @@ export function ClaimAnalysisPage() {
             </tbody>
           </table>
         </div>
-      </section>
+      </CollapsiblePanel>
 
-      <section className="panel two-col app-grow">
+      <CollapsiblePanel className="panel two-col app-grow" allowFocusView>
         <article className="panel-scroll">
           <h3 className="section-title"><AnalyzeIcon size={16} />Evidence and Supporting Facts</h3>
           {analysis.evidence_summary.map((evidence) => (
@@ -165,10 +166,10 @@ export function ClaimAnalysisPage() {
             ))}
           </ul>
         </article>
-      </section>
+      </CollapsiblePanel>
 
       {canReview && (
-        <section className="panel">
+        <CollapsiblePanel className="panel">
           <h3 className="section-title"><RiskIcon size={16} />Reviewer Disposition</h3>
           <form className="form-grid" onSubmit={handleSubmitReview}>
             <div className="split-row">
@@ -199,7 +200,7 @@ export function ClaimAnalysisPage() {
 
             <button type="submit"><span className="btn-inline"><AnalyzeIcon size={14} />Submit Decision</span></button>
           </form>
-        </section>
+        </CollapsiblePanel>
       )}
     </div>
   )

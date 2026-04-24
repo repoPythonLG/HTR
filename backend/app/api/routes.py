@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import math
 from collections import Counter
 from datetime import date, datetime
 from pathlib import Path
@@ -26,6 +27,10 @@ from app.schemas import (
     ExcelImportResponse,
     ExecutiveDashboardOut,
     ActiveImportOut,
+    OutlierClusterSummaryOut,
+    OutlierMapDashboardOut,
+    OutlierMapPointOut,
+    OutlierMetricOptionOut,
     PolicyExtractionResponse,
     PolicyRuleIn,
     PolicyRuleOut,
@@ -42,6 +47,7 @@ from app.services.auth import authenticate_user, create_access_token, get_curren
 from app.services.excel_import import parse_claim_rows, parse_spreadsheet_preview
 from app.services.policy import (
     extract_rules_from_policy_text,
+    get_location_cost_factor,
     get_risk_detection_mode,
     get_rule_threshold,
     risk_detection_mode_to_code,
@@ -766,6 +772,354 @@ def _employee_risk_index(
     return round(min(100.0, raw_score), 2)
 
 
+OUTLIER_METRIC_OPTIONS: Dict[str, str] = {
+    "claim_total": "Claim Amount (SAR)",
+    "location_adjusted_claim_total": "Location-Adjusted Claim Amount (SAR)",
+    "trip_duration_days": "Trip Duration (Days)",
+    "risk_score": "Risk Score",
+    "detection_count": "Detection Count",
+    "settlement_lag_days": "Settlement Lag (Days)",
+    "submission_lag_days": "Submission Lag (Days)",
+}
+
+
+def _safe_mean(values: List[float]) -> float:
+    return sum(values) / len(values) if values else 0.0
+
+
+def _safe_std(values: List[float], mean_value: float) -> float:
+    if not values:
+        return 0.0
+    variance = sum((item - mean_value) ** 2 for item in values) / len(values)
+    return math.sqrt(variance) if variance > 1e-12 else 0.0
+
+
+def _zscore(value: float, mean_value: float, std_value: float) -> float:
+    if std_value <= 1e-12:
+        return 0.0
+    return (value - mean_value) / std_value
+
+
+def _metric_value_for_claim(
+    *,
+    metric_key: str,
+    claim: Claim,
+    risk_score: Optional[float],
+    detection_count: int,
+    location_cost_factor: float,
+) -> Optional[float]:
+    if metric_key == "claim_total":
+        return float(claim.claim_total or 0.0)
+
+    if metric_key == "location_adjusted_claim_total":
+        safe_factor = location_cost_factor if location_cost_factor > 0 else 1.0
+        return float(claim.claim_total or 0.0) / safe_factor
+
+    if metric_key == "trip_duration_days":
+        if claim.trip_duration_days is None:
+            return None
+        return float(claim.trip_duration_days)
+
+    if metric_key == "risk_score":
+        return float(risk_score) if risk_score is not None else None
+
+    if metric_key == "detection_count":
+        return float(detection_count)
+
+    if metric_key == "settlement_lag_days":
+        if not claim.end_date or not claim.trip_settlement_date:
+            return None
+        return float((claim.trip_settlement_date - claim.end_date).days)
+
+    if metric_key == "submission_lag_days":
+        if not claim.end_date or not claim.created_at:
+            return None
+        return float((claim.created_at.date() - claim.end_date).days)
+
+    return None
+
+
+def _kmeans_2d(coords: List[tuple[float, float]], cluster_count: int, max_iterations: int = 30) -> tuple[List[int], List[tuple[float, float]]]:
+    point_count = len(coords)
+    if point_count == 0:
+        return [], []
+
+    k = max(1, min(cluster_count, point_count))
+    if k == 1:
+        centroid_x = _safe_mean([point[0] for point in coords])
+        centroid_y = _safe_mean([point[1] for point in coords])
+        return [0] * point_count, [(centroid_x, centroid_y)]
+
+    sorted_indexes = sorted(range(point_count), key=lambda idx: (coords[idx][0], coords[idx][1]))
+    initial_centroids: List[tuple[float, float]] = []
+    for bucket in range(k):
+        position = round(bucket * (point_count - 1) / (k - 1))
+        initial_centroids.append(coords[sorted_indexes[position]])
+
+    assignments = [-1] * point_count
+    centroids = initial_centroids
+
+    for _ in range(max_iterations):
+        next_assignments: List[int] = []
+        for x_value, y_value in coords:
+            best_cluster = 0
+            best_distance = float("inf")
+            for cluster_id, (center_x, center_y) in enumerate(centroids):
+                distance = (x_value - center_x) ** 2 + (y_value - center_y) ** 2
+                if distance < best_distance:
+                    best_distance = distance
+                    best_cluster = cluster_id
+            next_assignments.append(best_cluster)
+
+        if next_assignments == assignments:
+            break
+        assignments = next_assignments
+
+        sum_x = [0.0] * k
+        sum_y = [0.0] * k
+        counts = [0] * k
+        for idx, cluster_id in enumerate(assignments):
+            x_value, y_value = coords[idx]
+            sum_x[cluster_id] += x_value
+            sum_y[cluster_id] += y_value
+            counts[cluster_id] += 1
+
+        next_centroids: List[tuple[float, float]] = []
+        for cluster_id in range(k):
+            if counts[cluster_id] == 0:
+                next_centroids.append(centroids[cluster_id])
+            else:
+                next_centroids.append((sum_x[cluster_id] / counts[cluster_id], sum_y[cluster_id] / counts[cluster_id]))
+        centroids = next_centroids
+
+    if assignments[0] == -1:
+        assignments = [0] * point_count
+
+    return assignments, centroids
+
+
+@router.get("/dashboards/outlier-map", response_model=OutlierMapDashboardOut)
+def outlier_map_dashboard(
+    x_metric: str = "claim_total",
+    y_metric: str = "trip_duration_days",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("reviewer", "administrator")),
+):
+    metric_options = [
+        OutlierMetricOptionOut(key=key, label=label)
+        for key, label in OUTLIER_METRIC_OPTIONS.items()
+    ]
+
+    if x_metric not in OUTLIER_METRIC_OPTIONS:
+        raise HTTPException(status_code=400, detail=f"Unsupported x_metric: {x_metric}")
+    if y_metric not in OUTLIER_METRIC_OPTIONS:
+        raise HTTPException(status_code=400, detail=f"Unsupported y_metric: {y_metric}")
+    if x_metric == y_metric:
+        raise HTTPException(status_code=400, detail="x_metric and y_metric must be different")
+
+    claims = (
+        db.execute(
+            select(Claim)
+            .options(joinedload(Claim.risk_assessment), joinedload(Claim.detections))
+            .order_by(Claim.created_at.desc())
+        )
+        .unique()
+        .scalars()
+        .all()
+    )
+
+    x_label = OUTLIER_METRIC_OPTIONS[x_metric]
+    y_label = OUTLIER_METRIC_OPTIONS[y_metric]
+
+    raw_points: List[Dict[str, object]] = []
+    for claim in claims:
+        risk_score: Optional[float] = None
+        risk_level: Optional[str] = None
+        if claim.risk_assessment:
+            risk_score = float(claim.risk_assessment.risk_score or 0.0)
+            risk_level = claim.risk_assessment.risk_level
+        elif claim.risk_score_cached > 0:
+            risk_score = float(claim.risk_score_cached)
+
+        detection_count = len(claim.detections)
+        destination_city = claim.to_city or claim.destination_city
+        location_cost_factor = get_location_cost_factor(
+            country=claim.to_country,
+            city=destination_city,
+            trip_boundary=claim.trip_boundary,
+        )
+        x_value = _metric_value_for_claim(
+            metric_key=x_metric,
+            claim=claim,
+            risk_score=risk_score,
+            detection_count=detection_count,
+            location_cost_factor=location_cost_factor,
+        )
+        y_value = _metric_value_for_claim(
+            metric_key=y_metric,
+            claim=claim,
+            risk_score=risk_score,
+            detection_count=detection_count,
+            location_cost_factor=location_cost_factor,
+        )
+
+        if x_value is None or y_value is None:
+            continue
+        if not (math.isfinite(x_value) and math.isfinite(y_value)):
+            continue
+
+        raw_points.append(
+            {
+                "claim_id": claim.claim_id,
+                "employee_id": claim.employee_id,
+                "employee_name": claim.employee_name,
+                "department": claim.department,
+                "to_country": claim.to_country,
+                "to_city": destination_city,
+                "location_cost_factor": location_cost_factor,
+                "x_value": float(x_value),
+                "y_value": float(y_value),
+                "suspicious_flag": bool(claim.suspicious_flag),
+                "incorrect_flag": bool(claim.incorrect_flag),
+                "risk_level": risk_level,
+                "risk_score": risk_score,
+                "detection_count": detection_count,
+            }
+        )
+
+    if not raw_points:
+        return OutlierMapDashboardOut(
+            x_metric=x_metric,
+            y_metric=y_metric,
+            x_label=x_label,
+            y_label=y_label,
+            total_points=0,
+            outlier_points=0,
+            metric_options=metric_options,
+            clusters=[],
+            points=[],
+        )
+
+    x_values = [float(point["x_value"]) for point in raw_points]
+    y_values = [float(point["y_value"]) for point in raw_points]
+
+    x_mean = _safe_mean(x_values)
+    y_mean = _safe_mean(y_values)
+    x_std = _safe_std(x_values, x_mean)
+    y_std = _safe_std(y_values, y_mean)
+
+    z_axis_threshold = 2.35
+    z_distance_threshold = 3.0
+
+    for point in raw_points:
+        x_zscore = _zscore(float(point["x_value"]), x_mean, x_std)
+        y_zscore = _zscore(float(point["y_value"]), y_mean, y_std)
+        distance_score = math.sqrt((x_zscore ** 2) + (y_zscore ** 2))
+
+        reasons: List[str] = []
+        if abs(x_zscore) >= z_axis_threshold:
+            reasons.append(f"Extreme {x_label.lower()}")
+        if abs(y_zscore) >= z_axis_threshold:
+            reasons.append(f"Extreme {y_label.lower()}")
+        if distance_score >= z_distance_threshold:
+            reasons.append("Distant from peer cluster center")
+
+        point["x_zscore"] = round(x_zscore, 4)
+        point["y_zscore"] = round(y_zscore, 4)
+        point["distance_score"] = round(distance_score, 4)
+        point["outlier_reasons"] = reasons
+        point["outlier_flag"] = len(reasons) > 0
+        point["cluster_id"] = -1
+
+    non_outlier_indexes = [idx for idx, item in enumerate(raw_points) if not bool(item["outlier_flag"])]
+    if non_outlier_indexes:
+        non_outlier_points = [
+            (float(raw_points[idx]["x_zscore"]), float(raw_points[idx]["y_zscore"]))
+            for idx in non_outlier_indexes
+        ]
+        non_outlier_count = len(non_outlier_points)
+        if non_outlier_count < 14:
+            cluster_count = 1
+        elif non_outlier_count < 60:
+            cluster_count = 2
+        elif non_outlier_count < 160:
+            cluster_count = 3
+        else:
+            cluster_count = 4
+
+        assignments, _ = _kmeans_2d(non_outlier_points, cluster_count=cluster_count)
+        for local_index, point_index in enumerate(non_outlier_indexes):
+            raw_points[point_index]["cluster_id"] = int(assignments[local_index])
+
+    cluster_rows: List[OutlierClusterSummaryOut] = []
+    non_outlier_cluster_ids = sorted({int(point["cluster_id"]) for point in raw_points if int(point["cluster_id"]) >= 0})
+    for cluster_id in non_outlier_cluster_ids:
+        members = [point for point in raw_points if int(point["cluster_id"]) == cluster_id]
+        if not members:
+            continue
+        centroid_x = _safe_mean([float(member["x_value"]) for member in members])
+        centroid_y = _safe_mean([float(member["y_value"]) for member in members])
+        cluster_rows.append(
+            OutlierClusterSummaryOut(
+                cluster_id=cluster_id,
+                label=f"Cluster {cluster_id + 1}",
+                point_count=len(members),
+                centroid_x=round(centroid_x, 4),
+                centroid_y=round(centroid_y, 4),
+            )
+        )
+
+    outlier_members = [point for point in raw_points if bool(point["outlier_flag"])]
+    if outlier_members:
+        cluster_rows.append(
+            OutlierClusterSummaryOut(
+                cluster_id=-1,
+                label="Outliers",
+                point_count=len(outlier_members),
+                centroid_x=round(_safe_mean([float(member["x_value"]) for member in outlier_members]), 4),
+                centroid_y=round(_safe_mean([float(member["y_value"]) for member in outlier_members]), 4),
+            )
+        )
+
+    points = [
+        OutlierMapPointOut(
+            claim_id=str(point["claim_id"]),
+            employee_id=str(point["employee_id"]),
+            employee_name=str(point["employee_name"]),
+            department=str(point["department"]),
+            to_country=str(point["to_country"]) if point["to_country"] else None,
+            to_city=str(point["to_city"]) if point["to_city"] else None,
+            location_cost_factor=float(point["location_cost_factor"]),
+            x_value=float(point["x_value"]),
+            y_value=float(point["y_value"]),
+            x_zscore=float(point["x_zscore"]),
+            y_zscore=float(point["y_zscore"]),
+            distance_score=float(point["distance_score"]),
+            cluster_id=int(point["cluster_id"]),
+            outlier_flag=bool(point["outlier_flag"]),
+            outlier_reasons=list(point["outlier_reasons"]),
+            suspicious_flag=bool(point["suspicious_flag"]),
+            incorrect_flag=bool(point["incorrect_flag"]),
+            risk_level=str(point["risk_level"]) if point["risk_level"] else None,
+            risk_score=round(float(point["risk_score"]), 2) if point["risk_score"] is not None else None,
+            detection_count=int(point["detection_count"]),
+        )
+        for point in raw_points
+    ]
+
+    return OutlierMapDashboardOut(
+        x_metric=x_metric,
+        y_metric=y_metric,
+        x_label=x_label,
+        y_label=y_label,
+        total_points=len(points),
+        outlier_points=len(outlier_members),
+        metric_options=metric_options,
+        clusters=cluster_rows,
+        points=points,
+    )
+
+
 @router.get("/dashboards/employee-risk", response_model=EmployeeRiskDashboardOut)
 def employee_risk_dashboard(
     db: Session = Depends(get_db),
@@ -1040,6 +1394,10 @@ def _current_risk_settings(db: Session) -> RiskSettingsOut:
         detection_mode=get_risk_detection_mode(policy_map),
         mean_threshold_pct=round(get_rule_threshold(policy_map, "mean_threshold_pct", 10.0), 2),
         outlier_min_sample_size=int(max(3.0, get_rule_threshold(policy_map, "outlier_min_sample_size", 8.0))),
+        location_adjusted_threshold_pct=round(
+            get_rule_threshold(policy_map, "location_adjusted_threshold_pct", 12.0),
+            2,
+        ),
     )
 
 
@@ -1080,6 +1438,14 @@ def update_risk_settings(
         category="system",
         threshold=float(payload.outlier_min_sample_size),
         unit="count",
+    )
+    _get_or_create_policy_rule(
+        db,
+        key="location_adjusted_threshold_pct",
+        name="Location-Adjusted Mean Threshold Percentage",
+        category="threshold",
+        threshold=float(payload.location_adjusted_threshold_pct),
+        unit="pct",
     )
     db.commit()
     return _current_risk_settings(db)

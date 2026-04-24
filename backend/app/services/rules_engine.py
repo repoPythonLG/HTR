@@ -12,6 +12,7 @@ from app.models import Claim, ExtractedField, ReceiptDocument, ReviewerDecision
 from app.services.policy import (
     get_city_benchmark,
     get_detection_weight,
+    get_location_cost_factor,
     get_risk_detection_mode,
     get_rule_threshold,
 )
@@ -100,8 +101,52 @@ def _claim_duration_days(claim: Claim) -> Optional[int]:
     return None
 
 
+def _claim_destination_city(claim: Claim) -> Optional[str]:
+    return claim.to_city or claim.destination_city
+
+
 def _build_peer_groups(claim: Claim) -> list[tuple[str, list[tuple[str, str]]]]:
     groups: list[tuple[str, list[tuple[str, str]]]] = []
+    destination_city = _claim_destination_city(claim)
+
+    if claim.expense_type and claim.trip_boundary and claim.to_country and destination_city:
+        groups.append(
+            (
+                "expense_type + boundary + country + city",
+                [
+                    ("expense_type", claim.expense_type),
+                    ("trip_boundary", claim.trip_boundary),
+                    ("to_country", claim.to_country),
+                    ("destination_city", destination_city),
+                ],
+            )
+        )
+
+    if claim.expense_type and claim.trip_boundary and claim.to_country:
+        groups.append(
+            (
+                "expense_type + boundary + country",
+                [
+                    ("expense_type", claim.expense_type),
+                    ("trip_boundary", claim.trip_boundary),
+                    ("to_country", claim.to_country),
+                ],
+            )
+        )
+
+    if claim.trip_boundary and claim.to_country:
+        groups.append(
+            (
+                "boundary + country",
+                [
+                    ("trip_boundary", claim.trip_boundary),
+                    ("to_country", claim.to_country),
+                ],
+            )
+        )
+
+    if claim.to_country:
+        groups.append(("country", [("to_country", claim.to_country)]))
 
     if claim.expense_type and claim.trip_boundary and claim.trip_activity:
         groups.append(
@@ -160,6 +205,10 @@ def evaluate_claim(db: Session, claim: Claim, documents: list[ReceiptDocument], 
     candidates: list[DetectionCandidate] = []
     detection_mode = get_risk_detection_mode(policy_map)
     mean_threshold_pct = max(0.0, get_rule_threshold(policy_map, "mean_threshold_pct", 10.0))
+    location_adjusted_threshold_pct = max(
+        0.0,
+        get_rule_threshold(policy_map, "location_adjusted_threshold_pct", max(12.0, mean_threshold_pct)),
+    )
     outlier_min_sample = int(max(3.0, get_rule_threshold(policy_map, "outlier_min_sample_size", 8.0)))
 
     receipt_ids = list(set(_collect_values(documents, "receipt_number")))
@@ -375,6 +424,23 @@ def evaluate_claim(db: Session, claim: Claim, documents: list[ReceiptDocument], 
 
     peer_claims, peer_group = _peer_claims(db, claim, outlier_min_sample)
     peer_amounts = [float(item.claim_total) for item in peer_claims if item.claim_total and item.claim_total > 0]
+    current_location_factor = get_location_cost_factor(
+        country=claim.to_country,
+        city=_claim_destination_city(claim),
+        trip_boundary=claim.trip_boundary,
+    )
+    normalized_peer_amounts: list[float] = []
+    peer_location_factors: list[float] = []
+    for item in peer_claims:
+        if not item.claim_total or item.claim_total <= 0:
+            continue
+        item_factor = get_location_cost_factor(
+            country=item.to_country,
+            city=_claim_destination_city(item),
+            trip_boundary=item.trip_boundary,
+        )
+        normalized_peer_amounts.append(float(item.claim_total) / item_factor)
+        peer_location_factors.append(item_factor)
 
     use_outlier_detection = detection_mode in {"outlier", "combined"}
     use_mean_threshold = detection_mode in {"mean_threshold", "combined"}
@@ -477,6 +543,41 @@ def evaluate_claim(db: Session, claim: Claim, documents: list[ReceiptDocument], 
                     policy_reference="mean_threshold_pct",
                     confidence_score=0.88,
                     recommended_action="Review variance and supporting evidence",
+                )
+            )
+
+    if use_mean_threshold and len(normalized_peer_amounts) >= 3:
+        normalized_mean_amount = _mean(normalized_peer_amounts)
+        normalized_threshold_value = normalized_mean_amount * (1 + (location_adjusted_threshold_pct / 100.0))
+        normalized_claim_amount = float(claim.claim_total) / current_location_factor
+
+        if normalized_claim_amount > normalized_threshold_value:
+            uplift_pct = (
+                (normalized_claim_amount - normalized_mean_amount) / normalized_mean_amount * 100.0
+            ) if normalized_mean_amount > 0 else 0.0
+            candidates.append(
+                DetectionCandidate(
+                    detection_type="location_cost_anomaly",
+                    reason="Claim amount exceeds the location-adjusted peer expectation for destination city/country.",
+                    supporting_facts={
+                        "claim_amount": round(claim.claim_total, 2),
+                        "destination_country": claim.to_country,
+                        "destination_city": _claim_destination_city(claim),
+                        "trip_boundary": claim.trip_boundary,
+                        "location_cost_factor": round(current_location_factor, 3),
+                        "location_adjusted_claim_amount": round(normalized_claim_amount, 2),
+                        "peer_group": peer_group,
+                        "peer_sample_size": len(normalized_peer_amounts),
+                        "peer_mean_location_adjusted_amount": round(normalized_mean_amount, 2),
+                        "peer_avg_location_factor": round(_mean(peer_location_factors), 3) if peer_location_factors else 0.0,
+                        "configured_location_threshold_pct": round(location_adjusted_threshold_pct, 2),
+                        "location_adjusted_threshold_amount": round(normalized_threshold_value, 2),
+                        "uplift_vs_location_adjusted_mean_pct": round(uplift_pct, 2),
+                    },
+                    source_references={"entity": "claims"},
+                    policy_reference="location_adjusted_threshold_pct",
+                    confidence_score=0.87,
+                    recommended_action="Review amount relative to destination cost index",
                 )
             )
 

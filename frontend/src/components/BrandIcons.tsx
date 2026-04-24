@@ -142,6 +142,18 @@ export function UsersIcon(props: IconProps) {
   )
 }
 
+export function OutlierIcon(props: IconProps) {
+  return (
+    <StrokeIcon {...props}>
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+      <circle cx="8" cy="15.2" r="1.3" />
+      <circle cx="11.5" cy="11.8" r="1.3" />
+      <circle cx="14.7" cy="13.3" r="1.3" />
+      <circle cx="18.1" cy="7.2" r="1.6" />
+    </StrokeIcon>
+  )
+}
+
 export function DocumentIcon(props: IconProps) {
   return (
     <StrokeIcon {...props}>

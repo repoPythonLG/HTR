@@ -8,6 +8,7 @@ import {
   uploadClaimPack
 } from '../api/client'
 import { AnalyzeIcon, DocumentIcon, UploadIcon } from '../components/BrandIcons'
+import { CollapsiblePanel } from '../components/CollapsiblePanel'
 import { useAuth } from '../context/AuthContext'
 import { ActiveImport, SpreadsheetPreview } from '../types'
 
@@ -139,7 +140,7 @@ export function DataIntakePage() {
 
   return (
     <div className="app-page intake-page">
-      <section className="panel">
+      <CollapsiblePanel className="panel">
         <div className="panel-head">
           <div>
             <h2 className="section-title"><UploadIcon size={18} />Data Intake Window</h2>
@@ -153,9 +154,9 @@ export function DataIntakePage() {
         {loading && <div className="loading-bar" />}
         {message && <div className="success-box">{message}</div>}
         {error && <div className="error-box">{error}</div>}
-      </section>
+      </CollapsiblePanel>
 
-      <section className="panel two-col panel-scroll">
+      <CollapsiblePanel className="panel two-col panel-scroll">
         {canImportExcel && (
           <article>
             <h3 className="section-title"><UploadIcon size={16} />Bulk Upload (Excel/CSV)</h3>
@@ -256,9 +257,9 @@ export function DataIntakePage() {
             <button type="submit"><span className="btn-inline"><UploadIcon size={14} />Upload Claim Package</span></button>
           </form>
         </article>
-      </section>
+      </CollapsiblePanel>
 
-      <section className="panel table-panel app-grow intake-last-import-panel">
+      <CollapsiblePanel className="panel table-panel app-grow intake-last-import-panel" allowFocusView>
         <div className="panel-head">
           <div>
             <h3 className="section-title"><AnalyzeIcon size={16} />Last Imported Spreadsheet</h3>
@@ -318,7 +319,7 @@ export function DataIntakePage() {
             )}
           </>
         )}
-      </section>
+      </CollapsiblePanel>
     </div>
   )
 }
