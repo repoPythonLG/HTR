@@ -29,6 +29,13 @@ function buildTicks(minValue: number, maxValue: number, count = 5): number[] {
   return Array.from({ length: count }, (_, index) => minValue + step * index)
 }
 
+type ChartViewport = {
+  xLower: number
+  xUpper: number
+  yLower: number
+  yUpper: number
+}
+
 export function OutlierAnalyticsPage() {
   const [dashboard, setDashboard] = useState<OutlierMapDashboard>()
   const [error, setError] = useState<string>()
@@ -37,6 +44,7 @@ export function OutlierAnalyticsPage() {
   const [outliersOnly, setOutliersOnly] = useState(false)
   const [clusterFilter, setClusterFilter] = useState('all')
   const [hoveredClaimId, setHoveredClaimId] = useState<string>()
+  const [viewport, setViewport] = useState<ChartViewport>()
 
   useEffect(() => {
     fetchOutlierMapDashboard({ xMetric, yMetric })
@@ -77,34 +85,110 @@ export function OutlierAnalyticsPage() {
       .slice(0, 120)
   }, [dashboard])
 
-  if (error) return <div className="error-box">{error}</div>
-  if (!dashboard) return <div className="panel">Loading outlier analytics...</div>
-
   const plotWidth = 1100
   const plotHeight = 560
   const margin = { top: 20, right: 24, bottom: 60, left: 74 }
   const innerWidth = plotWidth - margin.left - margin.right
   const innerHeight = plotHeight - margin.top - margin.bottom
 
-  const xValues = filteredPoints.map((item) => item.x_value)
-  const yValues = filteredPoints.map((item) => item.y_value)
+  const baseViewport = useMemo<ChartViewport>(() => {
+    const xValues = filteredPoints.map((item) => item.x_value)
+    const yValues = filteredPoints.map((item) => item.y_value)
 
-  const xMin = xValues.length ? Math.min(...xValues) : 0
-  const xMax = xValues.length ? Math.max(...xValues) : 1
-  const yMin = yValues.length ? Math.min(...yValues) : 0
-  const yMax = yValues.length ? Math.max(...yValues) : 1
+    const xMin = xValues.length ? Math.min(...xValues) : 0
+    const xMax = xValues.length ? Math.max(...xValues) : 1
+    const yMin = yValues.length ? Math.min(...yValues) : 0
+    const yMax = yValues.length ? Math.max(...yValues) : 1
 
-  const safeXMin = xMin === xMax ? xMin - 1 : xMin
-  const safeXMax = xMin === xMax ? xMax + 1 : xMax
-  const safeYMin = yMin === yMax ? yMin - 1 : yMin
-  const safeYMax = yMin === yMax ? yMax + 1 : yMax
+    const safeXMin = xMin === xMax ? xMin - 1 : xMin
+    const safeXMax = xMin === xMax ? xMax + 1 : xMax
+    const safeYMin = yMin === yMax ? yMin - 1 : yMin
+    const safeYMax = yMin === yMax ? yMax + 1 : yMax
 
-  const xSpan = safeXMax - safeXMin
-  const ySpan = safeYMax - safeYMin
-  const xLower = safeXMin - xSpan * 0.05
-  const xUpper = safeXMax + xSpan * 0.05
-  const yLower = safeYMin - ySpan * 0.05
-  const yUpper = safeYMax + ySpan * 0.05
+    const xSpan = safeXMax - safeXMin
+    const ySpan = safeYMax - safeYMin
+    return {
+      xLower: safeXMin - xSpan * 0.05,
+      xUpper: safeXMax + xSpan * 0.05,
+      yLower: safeYMin - ySpan * 0.05,
+      yUpper: safeYMax + ySpan * 0.05,
+    }
+  }, [filteredPoints])
+
+  useEffect(() => {
+    setViewport(baseViewport)
+    setHoveredClaimId(undefined)
+  }, [baseViewport])
+
+  if (error) return <div className="error-box">{error}</div>
+  if (!dashboard) return <div className="panel">Loading outlier analytics...</div>
+
+  const activeViewport = viewport ?? baseViewport
+  const xLower = activeViewport.xLower
+  const xUpper = activeViewport.xUpper
+  const yLower = activeViewport.yLower
+  const yUpper = activeViewport.yUpper
+
+  function handlePlotWheel(event: React.WheelEvent<SVGSVGElement>) {
+    event.preventDefault()
+    const rect = event.currentTarget.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) return
+
+    const svgX = ((event.clientX - rect.left) / rect.width) * plotWidth
+    const svgY = ((event.clientY - rect.top) / rect.height) * plotHeight
+    const boundedSvgX = Math.min(margin.left + innerWidth, Math.max(margin.left, svgX))
+    const boundedSvgY = Math.min(margin.top + innerHeight, Math.max(margin.top, svgY))
+
+    const ratioX = (boundedSvgX - margin.left) / innerWidth
+    const ratioY = 1 - (boundedSvgY - margin.top) / innerHeight
+
+    const currentXSpan = Math.max(1e-9, xUpper - xLower)
+    const currentYSpan = Math.max(1e-9, yUpper - yLower)
+    const baseXSpan = Math.max(1e-9, baseViewport.xUpper - baseViewport.xLower)
+    const baseYSpan = Math.max(1e-9, baseViewport.yUpper - baseViewport.yLower)
+
+    const zoomScale = event.deltaY < 0 ? 0.88 : 1.14
+    const minXSpan = baseXSpan * 0.08
+    const minYSpan = baseYSpan * 0.08
+    const nextXSpan = Math.min(baseXSpan, Math.max(minXSpan, currentXSpan * zoomScale))
+    const nextYSpan = Math.min(baseYSpan, Math.max(minYSpan, currentYSpan * zoomScale))
+
+    const anchorX = xLower + ratioX * currentXSpan
+    const anchorY = yLower + ratioY * currentYSpan
+
+    let nextXLower = anchorX - ratioX * nextXSpan
+    let nextXUpper = nextXLower + nextXSpan
+    if (nextXLower < baseViewport.xLower) {
+      nextXLower = baseViewport.xLower
+      nextXUpper = nextXLower + nextXSpan
+    }
+    if (nextXUpper > baseViewport.xUpper) {
+      nextXUpper = baseViewport.xUpper
+      nextXLower = nextXUpper - nextXSpan
+    }
+
+    let nextYLower = anchorY - ratioY * nextYSpan
+    let nextYUpper = nextYLower + nextYSpan
+    if (nextYLower < baseViewport.yLower) {
+      nextYLower = baseViewport.yLower
+      nextYUpper = nextYLower + nextYSpan
+    }
+    if (nextYUpper > baseViewport.yUpper) {
+      nextYUpper = baseViewport.yUpper
+      nextYLower = nextYUpper - nextYSpan
+    }
+
+    setViewport({
+      xLower: nextXLower,
+      xUpper: nextXUpper,
+      yLower: nextYLower,
+      yUpper: nextYUpper,
+    })
+  }
+
+  function handlePlotReset() {
+    setViewport(baseViewport)
+  }
 
   const xTicks = buildTicks(xLower, xUpper, 6)
   const yTicks = buildTicks(yLower, yUpper, 6)
@@ -225,6 +309,8 @@ export function OutlierAnalyticsPage() {
               viewBox={`0 0 ${plotWidth} ${plotHeight}`}
               role="img"
               aria-label="Outlier scatter plot"
+              onWheel={handlePlotWheel}
+              onDoubleClick={handlePlotReset}
               onMouseLeave={() => setHoveredClaimId(undefined)}
             >
               {xTicks.map((tick) => {
