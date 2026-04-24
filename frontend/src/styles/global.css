@@ -1371,6 +1371,15 @@ pre {
     align-items: flex-start;
   }
 
+  .topbar-user {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .topbar-identity {
+    text-align: left;
+  }
+
   .toolbar {
     grid-template-columns: 1fr;
   }
