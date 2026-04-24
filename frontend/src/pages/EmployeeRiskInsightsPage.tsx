@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { fetchEmployeeRiskDashboard } from '../api/client'
 import { AnalyzeIcon, ClaimsIcon, EmployeeIcon, RiskIcon, UsersIcon, WrongClaimIcon } from '../components/BrandIcons'
 import { EmployeeRiskDashboard, EmployeeRiskProfile } from '../types'
+import { formatDetectionType } from '../utils/formatters'
 
 const currencyFormatter = new Intl.NumberFormat('en-GB', {
   minimumFractionDigits: 2,
@@ -186,11 +187,17 @@ export function EmployeeRiskInsightsPage() {
       if (riskFilter && employee.employee_risk_level.toLowerCase() !== riskFilter.toLowerCase()) return false
       if (!q) return true
 
+      const rawTopDetection = (employee.top_detection_type || '').toLowerCase()
+      const formattedTopDetection = employee.top_detection_type
+        ? formatDetectionType(employee.top_detection_type).toLowerCase()
+        : ''
+
       return (
         employee.employee_id.toLowerCase().includes(q) ||
         employee.employee_name.toLowerCase().includes(q) ||
         employee.department.toLowerCase().includes(q) ||
-        (employee.top_detection_type || '').toLowerCase().includes(q)
+        rawTopDetection.includes(q) ||
+        formattedTopDetection.includes(q)
       )
     })
   }, [employees, searchTerm, departmentFilter, riskFilter])
@@ -265,7 +272,7 @@ export function EmployeeRiskInsightsPage() {
           metricLabel="Flagged Claims"
           metricValue={spotlightViolation ? `${spotlightViolation.flagged_claims}` : '-'}
           tone={spotlightViolation ? toneForRisk(spotlightViolation.employee_risk_level) : 'low'}
-          detail={spotlightViolation ? `Violation rate ${spotlightViolation.violation_rate_pct}% · Top detection ${spotlightViolation.top_detection_type || '-'}` : '-'}
+          detail={spotlightViolation ? `Violation rate ${spotlightViolation.violation_rate_pct}% · Top detection ${formatDetectionType(spotlightViolation.top_detection_type)}` : '-'}
         />
 
         <SpotlightCard
@@ -472,7 +479,7 @@ export function EmployeeRiskInsightsPage() {
                   <td>{employee.avg_trip_duration_days}</td>
                   <td>{employee.avg_risk_score}</td>
                   <td>{employee.total_detections}</td>
-                  <td>{employee.top_detection_type ? `${employee.top_detection_type} (${employee.top_detection_count})` : '-'}</td>
+                  <td>{employee.top_detection_type ? `${formatDetectionType(employee.top_detection_type)} (${employee.top_detection_count})` : '-'}</td>
                   <td>{employee.top_destination_city || '-'}</td>
                   <td>{employee.last_claim_at ? dayjs(employee.last_claim_at).format('DD MMM YYYY') : '-'}</td>
                 </tr>

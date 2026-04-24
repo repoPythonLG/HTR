@@ -3,6 +3,7 @@ import { fetchEmployeeDashboard, fetchExecutiveDashboard } from '../api/client'
 import { AnalyzeIcon, ClaimsIcon, RiskIcon, WrongClaimIcon } from '../components/BrandIcons'
 import { useAuth } from '../context/AuthContext'
 import { EmployeeDashboard, ExecutiveDashboard } from '../types'
+import { formatDetectionType } from '../utils/formatters'
 
 function BarRow({ label, value, total, tone }: { label: string; value: number; total: number; tone: string }) {
   const pct = total > 0 ? Math.round((value / total) * 100) : 0
@@ -182,7 +183,7 @@ export function ExecutiveDashboardPage() {
               )}
               {executive.top_detection_types.map((item) => (
                 <tr key={item.detection_type}>
-                  <td>{item.detection_type}</td>
+                  <td>{formatDetectionType(item.detection_type)}</td>
                   <td>{item.count}</td>
                 </tr>
               ))}

@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { analyzeClaim, fetchClaims } from '../api/client'
 import { AnalyzeIcon, ClaimsIcon, DocumentIcon, RefreshIcon, RiskIcon, WrongClaimIcon } from '../components/BrandIcons'
 import { ClaimSummary } from '../types'
+import { formatDetectionType } from '../utils/formatters'
 
 function riskChipClass(level?: string | null) {
   const normalized = (level || '').toLowerCase()
@@ -222,7 +223,7 @@ export function ClaimsWorkbenchPage() {
                   </td>
                   <td>
                     <p>Detections: {claim.detection_count}</p>
-                    <p>{claim.primary_red_flag || '-'}</p>
+                    <p>{claim.primary_red_flag ? formatDetectionType(claim.primary_red_flag) : '-'}</p>
                   </td>
                   <td>{dayjs(claim.created_at).format('DD MMM YYYY HH:mm')}</td>
                   <td>

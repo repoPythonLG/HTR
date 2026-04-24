@@ -5,6 +5,7 @@ import { fetchClaimAnalysis, fetchClaimDetail, getDocumentUrl, submitReviewActio
 import { AnalyzeIcon, ClaimsIcon, DocumentIcon, RiskIcon, WrongClaimIcon } from '../components/BrandIcons'
 import { useAuth } from '../context/AuthContext'
 import { ClaimAnalysis, ClaimDetail } from '../types'
+import { formatDetectionType } from '../utils/formatters'
 
 function severityClass(severity: string) {
   const value = severity.toLowerCase()
@@ -86,7 +87,7 @@ export function ClaimAnalysisPage() {
         <div className="metric-grid compact">
           <article className="metric-card">
             <div className="metric-line"><span>Primary Red Flag</span><RiskIcon className="metric-icon" /></div>
-            <strong>{analysis.primary_red_flag || 'N/A'}</strong>
+            <strong>{analysis.primary_red_flag ? formatDetectionType(analysis.primary_red_flag) : 'N/A'}</strong>
           </article>
           <article className="metric-card">
             <div className="metric-line"><span>Suspicious Claim</span><RiskIcon className="metric-icon" /></div>
@@ -120,7 +121,7 @@ export function ClaimAnalysisPage() {
             <tbody>
               {analysis.findings.map((finding) => (
                 <tr key={`${finding.detection_type}-${finding.policy_reference || 'none'}`}>
-                  <td>{finding.detection_type}</td>
+                  <td>{formatDetectionType(finding.detection_type)}</td>
                   <td><span className={severityClass(finding.severity)}>{finding.severity}</span></td>
                   <td>{finding.reason}</td>
                   <td>{finding.policy_reference || '-'}</td>
@@ -138,7 +139,7 @@ export function ClaimAnalysisPage() {
           <h3 className="section-title"><AnalyzeIcon size={16} />Evidence and Supporting Facts</h3>
           {analysis.evidence_summary.map((evidence) => (
             <details key={evidence.detection_type} className="evidence-box" open>
-              <summary>{evidence.detection_type}</summary>
+              <summary>{formatDetectionType(evidence.detection_type)}</summary>
               <pre>{JSON.stringify(evidence.supporting_facts, null, 2)}</pre>
               <pre>{JSON.stringify(evidence.source_references, null, 2)}</pre>
             </details>
