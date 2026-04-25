@@ -914,6 +914,8 @@ button:disabled {
   min-width: 0;
   position: relative;
   flex: 1;
+  display: flex;
+  align-items: stretch;
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -928,7 +930,8 @@ button:disabled {
 .outlier-plot-svg {
   width: 100%;
   min-width: 760px;
-  height: clamp(340px, 58vh, 530px);
+  height: 100%;
+  flex: 1 1 auto;
   display: block;
   cursor: grab;
   user-select: none;

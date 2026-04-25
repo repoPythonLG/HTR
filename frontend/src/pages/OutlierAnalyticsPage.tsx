@@ -72,6 +72,8 @@ export function OutlierAnalyticsPage() {
   const [isPanning, setIsPanning] = useState(false)
   const panSessionRef = useRef<PanSession | null>(null)
   const panMovedRef = useRef(false)
+  const plotFrameRef = useRef<HTMLDivElement | null>(null)
+  const [plotSize, setPlotSize] = useState({ width: 1100, height: 560 })
 
   useEffect(() => {
     fetchOutlierMapDashboard({ xMetric, yMetric })
@@ -112,8 +114,29 @@ export function OutlierAnalyticsPage() {
       .slice(0, 120)
   }, [dashboard])
 
-  const plotWidth = 1100
-  const plotHeight = 560
+  useEffect(() => {
+    const frameEl = plotFrameRef.current
+    if (!frameEl) return
+    const plotFrame = frameEl
+
+    function updatePlotSize() {
+      const bounds = plotFrame.getBoundingClientRect()
+      const nextWidth = Math.max(760, Math.floor(bounds.width))
+      const nextHeight = Math.max(420, Math.floor(bounds.height))
+      setPlotSize((current) => {
+        if (current.width === nextWidth && current.height === nextHeight) return current
+        return { width: nextWidth, height: nextHeight }
+      })
+    }
+
+    updatePlotSize()
+    const observer = new ResizeObserver(updatePlotSize)
+    observer.observe(plotFrame)
+    return () => observer.disconnect()
+  }, [])
+
+  const plotWidth = plotSize.width
+  const plotHeight = plotSize.height
   const margin = { top: 20, right: 24, bottom: 60, left: 74 }
   const innerWidth = plotWidth - margin.left - margin.right
   const innerHeight = plotHeight - margin.top - margin.bottom
@@ -400,7 +423,7 @@ export function OutlierAnalyticsPage() {
           ))}
         </div>
 
-        <div className="outlier-plot-frame">
+        <div className="outlier-plot-frame" ref={plotFrameRef}>
           {filteredPoints.length === 0 ? (
             <p className="empty-muted">No points available for this metric/filter combination.</p>
           ) : (
