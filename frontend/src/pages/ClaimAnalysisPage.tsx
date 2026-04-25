@@ -51,6 +51,7 @@ export function ClaimAnalysisPage() {
   const [notes, setNotes] = useState('')
   const [dispositionReason, setDispositionReason] = useState('')
   const [activeEvidence, setActiveEvidence] = useState<ClaimAnalysis['evidence_summary'][number] | null>(null)
+  const [submittingReview, setSubmittingReview] = useState(false)
 
   const canReview = user?.role === 'reviewer' || user?.role === 'administrator'
 
@@ -76,20 +77,43 @@ export function ClaimAnalysisPage() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [activeEvidence])
 
+  useEffect(() => {
+    if (!canReview) return
+    setReviewerId((current) => {
+      if (current.trim()) return current
+      return user?.employee_code || user?.username || ''
+    })
+  }, [canReview, user?.employee_code, user?.username])
+
   async function handleSubmitReview(event: FormEvent) {
     event.preventDefault()
-    if (!claimId || !reviewerId) return
+    if (!claimId) return
+
+    const reviewerValue = reviewerId.trim() || user?.employee_code || user?.username || ''
+    if (!reviewerValue) {
+      setError('Reviewer ID is required before submitting a disposition.')
+      return
+    }
+
     setError(undefined)
+    setSubmittingReview(true)
     try {
       await submitReviewAction(claimId, {
-        reviewer_id: reviewerId,
+        reviewer_id: reviewerValue,
         status,
         notes: notes || undefined,
         disposition_reason: dispositionReason || undefined
       })
-      navigate('/claims')
+      const normalizedStatus = status.toLowerCase()
+      if (normalizedStatus === 'approved' || normalizedStatus === 'dismissed' || normalizedStatus === 'escalated') {
+        navigate('/history')
+      } else {
+        navigate('/claims')
+      }
     } catch (err) {
       setError(String(err))
+    } finally {
+      setSubmittingReview(false)
     }
   }
 
@@ -256,7 +280,7 @@ export function ClaimAnalysisPage() {
             <div className="split-row">
               <label>
                 Reviewer ID
-                <input value={reviewerId} onChange={(e) => setReviewerId(e.target.value)} placeholder="REV-101" />
+                <input value={reviewerId} onChange={(e) => setReviewerId(e.target.value)} placeholder="REV-101" required />
               </label>
               <label>
                 Status
@@ -279,7 +303,9 @@ export function ClaimAnalysisPage() {
               <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={4} />
             </label>
 
-            <button type="submit"><span className="btn-inline"><AnalyzeIcon size={14} />Submit Decision</span></button>
+            <button type="submit" disabled={submittingReview}>
+              <span className="btn-inline"><AnalyzeIcon size={14} />{submittingReview ? 'Submitting...' : 'Submit Decision'}</span>
+            </button>
           </form>
         </CollapsiblePanel>
       )}

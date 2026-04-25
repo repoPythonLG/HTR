@@ -1,7 +1,7 @@
 import dayjs from 'dayjs'
 import { ReactNode } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { AdminIcon, ClaimsIcon, DashboardIcon, EmployeeIcon, OutlierIcon, SabicIcon, UploadIcon, UsersIcon } from '../components/BrandIcons'
+import { AdminIcon, ClaimsIcon, DashboardIcon, DocumentIcon, EmployeeIcon, OutlierIcon, SabicIcon, UploadIcon, UsersIcon } from '../components/BrandIcons'
 import { useAuth } from '../context/AuthContext'
 
 function NavItem({ to, label, icon }: { to: string; label: string; icon: ReactNode }) {
@@ -49,6 +49,9 @@ export function AppLayout() {
           )}
           {(user?.role === 'reviewer' || user?.role === 'administrator') && (
             <NavItem to="/outliers" label="Outlier Analytics" icon={<OutlierIcon />} />
+          )}
+          {(user?.role === 'reviewer' || user?.role === 'administrator') && (
+            <NavItem to="/history" label="Processed History" icon={<DocumentIcon />} />
           )}
           {user?.role === 'employee' && (
             <NavItem to="/employee" label="Employee View" icon={<EmployeeIcon />} />

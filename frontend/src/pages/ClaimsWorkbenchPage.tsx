@@ -31,7 +31,7 @@ export function ClaimsWorkbenchPage() {
     setLoading(true)
     setError(undefined)
     try {
-      const rows = await fetchClaims({ status: statusFilter || undefined, suspiciousOnly })
+      const rows = await fetchClaims({ queue: 'active', status: statusFilter || undefined, suspiciousOnly })
       setClaims(rows)
     } catch (err) {
       setError(String(err))
@@ -143,8 +143,6 @@ export function ClaimsWorkbenchPage() {
                 <option value="uploaded">Uploaded</option>
                 <option value="analyzed">Analyzed</option>
                 <option value="under_review">Under Review</option>
-                <option value="reviewed">Reviewed</option>
-                <option value="escalated">Escalated</option>
               </select>
             </label>
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchOutlierMapDashboard } from '../api/client'
 import { AnalyzeIcon, OutlierIcon, RiskIcon } from '../components/BrandIcons'
@@ -74,6 +74,8 @@ export function OutlierAnalyticsPage() {
   const panMovedRef = useRef(false)
   const plotFrameRef = useRef<HTMLDivElement | null>(null)
   const [plotSize, setPlotSize] = useState({ width: 1100, height: 560 })
+  const rawClipId = useId()
+  const plotClipId = rawClipId.replace(/:/g, '')
 
   useEffect(() => {
     fetchOutlierMapDashboard({ xMetric, yMetric })
@@ -137,7 +139,7 @@ export function OutlierAnalyticsPage() {
 
   const plotWidth = plotSize.width
   const plotHeight = plotSize.height
-  const margin = { top: 20, right: 24, bottom: 60, left: 74 }
+  const margin = { top: 16, right: 12, bottom: 56, left: 58 }
   const innerWidth = plotWidth - margin.left - margin.right
   const innerHeight = plotHeight - margin.top - margin.bottom
 
@@ -157,11 +159,19 @@ export function OutlierAnalyticsPage() {
 
     const xSpan = safeXMax - safeXMin
     const ySpan = safeYMax - safeYMin
+    const xPadding = xSpan * 0.015
+    const yPadding = ySpan * 0.015
+
+    const xLower = safeXMin >= 0 ? Math.max(0, safeXMin - xPadding) : safeXMin - xPadding
+    const yLower = safeYMin >= 0 ? Math.max(0, safeYMin - yPadding) : safeYMin - yPadding
+    const xUpper = safeXMax + xPadding
+    const yUpper = safeYMax + yPadding
+
     return {
-      xLower: safeXMin - xSpan * 0.05,
-      xUpper: safeXMax + xSpan * 0.05,
-      yLower: safeYMin - ySpan * 0.05,
-      yUpper: safeYMax + ySpan * 0.05,
+      xLower,
+      xUpper,
+      yLower,
+      yUpper,
     }
   }, [filteredPoints])
 
@@ -439,6 +449,12 @@ export function OutlierAnalyticsPage() {
                 if (!isPanning) setHoveredClaimId(undefined)
               }}
             >
+              <defs>
+                <clipPath id={plotClipId}>
+                  <rect x={margin.left} y={margin.top} width={innerWidth} height={innerHeight} />
+                </clipPath>
+              </defs>
+
               {xTicks.map((tick) => {
                 const x = toX(tick)
                 return (
@@ -456,7 +472,7 @@ export function OutlierAnalyticsPage() {
                 return (
                   <g key={`y-${tick.toFixed(4)}`}>
                     <line x1={margin.left} y1={y} x2={margin.left + innerWidth} y2={y} className="outlier-grid-line" />
-                    <text x={56} y={y + 4} textAnchor="end" className="outlier-axis-label">
+                    <text x={margin.left - 8} y={y + 4} textAnchor="end" className="outlier-axis-label">
                       {formatMetricValue(tick)}
                     </text>
                   </g>
@@ -479,33 +495,35 @@ export function OutlierAnalyticsPage() {
                 {dashboard.y_label}
               </text>
 
-              {filteredPoints.map((point) => (
-                <circle
-                  key={point.claim_id}
-                  cx={toX(point.x_value)}
-                  cy={toY(point.y_value)}
-                  r={point.outlier_flag ? 5.8 : 4.4}
-                  fill={clusterColor(point)}
-                  fillOpacity={point.outlier_flag ? 0.88 : 0.72}
-                  stroke={point.outlier_flag ? '#7f1321' : '#ffffff'}
-                  strokeWidth={point.outlier_flag ? 1.3 : 0.9}
-                  onMouseEnter={() => {
-                    if (!isPanning) setHoveredClaimId(point.claim_id)
-                  }}
-                  onClick={() => {
-                    if (panMovedRef.current) {
-                      panMovedRef.current = false
-                      return
-                    }
-                    if (point.claim_id) navigate(`/claims/${point.claim_id}/analysis`)
-                  }}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <title>
-                    {`${point.employee_name} (${point.employee_id}) · Claim ${point.claim_id} · Click to open details`}
-                  </title>
-                </circle>
-              ))}
+              <g clipPath={`url(#${plotClipId})`}>
+                {filteredPoints.map((point) => (
+                  <circle
+                    key={point.claim_id}
+                    cx={toX(point.x_value)}
+                    cy={toY(point.y_value)}
+                    r={point.outlier_flag ? 5.8 : 4.4}
+                    fill={clusterColor(point)}
+                    fillOpacity={point.outlier_flag ? 0.88 : 0.72}
+                    stroke={point.outlier_flag ? '#7f1321' : '#ffffff'}
+                    strokeWidth={point.outlier_flag ? 1.3 : 0.9}
+                    onMouseEnter={() => {
+                      if (!isPanning) setHoveredClaimId(point.claim_id)
+                    }}
+                    onClick={() => {
+                      if (panMovedRef.current) {
+                        panMovedRef.current = false
+                        return
+                      }
+                      if (point.claim_id) navigate(`/claims/${point.claim_id}/analysis`)
+                    }}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <title>
+                      {`${point.employee_name} (${point.employee_id}) · Claim ${point.claim_id} · Click to open details`}
+                    </title>
+                  </circle>
+                ))}
+              </g>
             </svg>
           )}
           {hoveredPoint && (

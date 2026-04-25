@@ -63,6 +63,9 @@ from app.services.storage import (
 
 router = APIRouter()
 
+PROCESSED_CLAIM_STATUSES = {"reviewed", "escalated"}
+ACTIVE_CLAIM_STATUSES = {"uploaded", "analyzed", "under_review"}
+
 
 def _enforce_employee_claim_scope(current_user: User, claim: Claim) -> None:
     if current_user.role != "employee":
@@ -486,11 +489,21 @@ def analyze(
 @router.get("/claims", response_model=List[ClaimSummaryOut])
 def list_claims(
     status: Optional[str] = None,
+    queue: str = "all",
     suspicious_only: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("employee", "reviewer", "administrator")),
 ):
+    queue_text = (queue or "all").strip().lower()
+    if queue_text not in {"all", "active", "history"}:
+        raise HTTPException(status_code=400, detail="Unsupported queue filter. Use all, active, or history.")
+
     stmt = select(Claim).order_by(Claim.created_at.desc())
+    if queue_text == "active":
+        stmt = stmt.where(Claim.status.in_(ACTIVE_CLAIM_STATUSES))
+    elif queue_text == "history":
+        stmt = stmt.where(Claim.status.in_(PROCESSED_CLAIM_STATUSES))
+
     if status:
         stmt = stmt.where(Claim.status == status)
     if suspicious_only:
@@ -667,23 +680,38 @@ def executive_dashboard(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("reviewer", "administrator")),
 ):
-    total_claims = db.execute(select(func.count()).select_from(Claim)).scalar_one()
-    analyzed_claims = db.execute(
-        select(func.count()).select_from(Claim).where(Claim.status.in_(["analyzed", "under_review", "reviewed", "escalated"]))
+    total_claims = db.execute(
+        select(func.count()).select_from(Claim).where(Claim.status.in_(ACTIVE_CLAIM_STATUSES))
     ).scalar_one()
-    suspicious_claims = db.execute(select(func.count()).select_from(Claim).where(Claim.suspicious_flag.is_(True))).scalar_one()
-    wrong_claims = db.execute(select(func.count()).select_from(Claim).where(Claim.incorrect_flag.is_(True))).scalar_one()
+    analyzed_claims = db.execute(
+        select(func.count()).select_from(Claim).where(Claim.status.in_(["analyzed", "under_review"]))
+    ).scalar_one()
+    suspicious_claims = db.execute(
+        select(func.count()).select_from(Claim).where(Claim.status.in_(ACTIVE_CLAIM_STATUSES), Claim.suspicious_flag.is_(True))
+    ).scalar_one()
+    wrong_claims = db.execute(
+        select(func.count()).select_from(Claim).where(Claim.status.in_(ACTIVE_CLAIM_STATUSES), Claim.incorrect_flag.is_(True))
+    ).scalar_one()
 
     risk_rows = db.execute(
-        select(RiskAssessment.risk_level, func.count()).group_by(RiskAssessment.risk_level)
+        select(RiskAssessment.risk_level, func.count())
+        .join(Claim, Claim.claim_id == RiskAssessment.claim_id)
+        .where(Claim.status.in_(ACTIVE_CLAIM_STATUSES))
+        .group_by(RiskAssessment.risk_level)
     ).all()
     by_risk_level = {row[0]: row[1] for row in risk_rows}
 
-    dept_rows = db.execute(select(Claim.department, func.count()).group_by(Claim.department)).all()
+    dept_rows = db.execute(
+        select(Claim.department, func.count())
+        .where(Claim.status.in_(ACTIVE_CLAIM_STATUSES))
+        .group_by(Claim.department)
+    ).all()
     by_department = {row[0]: row[1] for row in dept_rows}
 
     detection_rows = db.execute(
         select(Detection.detection_type, func.count())
+        .join(Claim, Claim.claim_id == Detection.claim_id)
+        .where(Claim.status.in_(ACTIVE_CLAIM_STATUSES))
         .group_by(Detection.detection_type)
         .order_by(func.count().desc())
         .limit(10)
@@ -921,6 +949,7 @@ def outlier_map_dashboard(
         db.execute(
             select(Claim)
             .options(joinedload(Claim.risk_assessment), joinedload(Claim.detections))
+            .where(Claim.status.in_(ACTIVE_CLAIM_STATUSES))
             .order_by(Claim.created_at.desc())
         )
         .unique()
@@ -1129,6 +1158,7 @@ def employee_risk_dashboard(
         db.execute(
             select(Claim)
             .options(joinedload(Claim.risk_assessment), joinedload(Claim.detections))
+            .where(Claim.status.in_(ACTIVE_CLAIM_STATUSES))
             .order_by(Claim.created_at.desc())
         )
         .unique()
@@ -1156,7 +1186,7 @@ def employee_risk_dashboard(
     overall_trip_days = 0
     overall_trip_day_claims = 0
 
-    analyzed_status = {"analyzed", "under_review", "reviewed", "escalated"}
+    analyzed_status = {"analyzed", "under_review"}
 
     for claim in claims:
         employee_id = claim.employee_id or "UNASSIGNED"

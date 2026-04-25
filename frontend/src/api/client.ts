@@ -58,10 +58,15 @@ export async function fetchCurrentUser(): Promise<CurrentUser> {
   return response.data
 }
 
-export async function fetchClaims(params?: { status?: string; suspiciousOnly?: boolean }): Promise<ClaimSummary[]> {
+export async function fetchClaims(params?: {
+  status?: string
+  queue?: 'all' | 'active' | 'history'
+  suspiciousOnly?: boolean
+}): Promise<ClaimSummary[]> {
   const response = await api.get<ClaimSummary[]>('/claims', {
     params: {
       status: params?.status,
+      queue: params?.queue,
       suspicious_only: params?.suspiciousOnly || undefined
     }
   })
