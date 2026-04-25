@@ -1,4 +1,52 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+@font-face {
+  font-family: 'SabicSans';
+  src: url('/fonts/sabic/SABIC_light.woff2') format('woff2');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SabicSans';
+  src: url('/fonts/sabic/SABIC_regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SabicSans';
+  src: url('/fonts/sabic/SABIC_bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SabicHeadline';
+  src: url('/fonts/sabic/SABICHeadline_light.woff2') format('woff2');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SabicHeadline';
+  src: url('/fonts/sabic/SABICHeadline_regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SabicHeadline';
+  src: url('/fonts/sabic/SABICHeadline_bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
 
 :root {
   --bg: #e7eef8;
@@ -21,6 +69,8 @@
   --shadow-soft: 0 14px 26px rgba(8, 38, 83, 0.1), 0 2px 8px rgba(8, 38, 83, 0.07);
   --radius: 16px;
   --shell-header-height: 126px;
+  --font-body: 'SabicSans', Arial, sans-serif;
+  --font-heading: 'SabicHeadline', 'SabicSans', Arial, sans-serif;
 }
 
 * {
@@ -36,7 +86,7 @@ body,
 
 body {
   margin: 0;
-  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-family: var(--font-body);
   color: var(--text);
   background:
     radial-gradient(circle at 87% 8%, rgba(246, 161, 48, 0.22), transparent 33%),
@@ -53,6 +103,14 @@ h3,
 h4,
 p {
   margin: 0;
+}
+
+h1,
+h2,
+h3,
+h4,
+.eyebrow {
+  font-family: var(--font-heading);
 }
 
 a {
