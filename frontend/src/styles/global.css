@@ -918,11 +918,24 @@ button:disabled {
   overflow-y: hidden;
 }
 
+.outlier-map-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.85rem;
+}
+
 .outlier-plot-svg {
   width: 100%;
   min-width: 760px;
   height: clamp(340px, 58vh, 530px);
   display: block;
+  cursor: grab;
+  user-select: none;
+}
+
+.outlier-plot-svg.is-panning {
+  cursor: grabbing;
 }
 
 .outlier-grid-line {

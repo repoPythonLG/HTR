@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { fetchOutlierMapDashboard } from '../api/client'
 import { AnalyzeIcon, OutlierIcon, RiskIcon } from '../components/BrandIcons'
 import { CollapsiblePanel } from '../components/CollapsiblePanel'
@@ -6,14 +7,22 @@ import { OutlierMapDashboard, OutlierMapPoint } from '../types'
 
 const CLUSTER_COLORS = ['#2f60b7', '#228750', '#ce7b1f', '#6f52b5', '#0d8895']
 
-function formatMetricValue(value: number): string {
-  if (Math.abs(value) >= 1000) {
-    return value.toLocaleString('en-GB', { maximumFractionDigits: 2 })
+function asFiniteNumber(value: unknown, fallback = 0): number {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function formatMetricValue(value: unknown): string {
+  const numericValue = Number(value)
+  if (!Number.isFinite(numericValue)) return '-'
+
+  if (Math.abs(numericValue) >= 1000) {
+    return numericValue.toLocaleString('en-GB', { maximumFractionDigits: 2 })
   }
-  if (Math.abs(value) >= 100) {
-    return value.toLocaleString('en-GB', { maximumFractionDigits: 1 })
+  if (Math.abs(numericValue) >= 100) {
+    return numericValue.toLocaleString('en-GB', { maximumFractionDigits: 1 })
   }
-  return value.toLocaleString('en-GB', { maximumFractionDigits: 2 })
+  return numericValue.toLocaleString('en-GB', { maximumFractionDigits: 2 })
 }
 
 function clusterColor(point: OutlierMapPoint): string {
@@ -29,6 +38,12 @@ function buildTicks(minValue: number, maxValue: number, count = 5): number[] {
   return Array.from({ length: count }, (_, index) => minValue + step * index)
 }
 
+function formatReasons(value: unknown): string {
+  if (!Array.isArray(value)) return '—'
+  const rows = value.map((item) => String(item)).filter(Boolean)
+  return rows.length ? rows.join(' · ') : '—'
+}
+
 type ChartViewport = {
   xLower: number
   xUpper: number
@@ -36,7 +51,16 @@ type ChartViewport = {
   yUpper: number
 }
 
+type PanSession = {
+  startClientX: number
+  startClientY: number
+  rectWidth: number
+  rectHeight: number
+  startViewport: ChartViewport
+}
+
 export function OutlierAnalyticsPage() {
+  const navigate = useNavigate()
   const [dashboard, setDashboard] = useState<OutlierMapDashboard>()
   const [error, setError] = useState<string>()
   const [xMetric, setXMetric] = useState('claim_total')
@@ -45,6 +69,9 @@ export function OutlierAnalyticsPage() {
   const [clusterFilter, setClusterFilter] = useState('all')
   const [hoveredClaimId, setHoveredClaimId] = useState<string>()
   const [viewport, setViewport] = useState<ChartViewport>()
+  const [isPanning, setIsPanning] = useState(false)
+  const panSessionRef = useRef<PanSession | null>(null)
+  const panMovedRef = useRef(false)
 
   useEffect(() => {
     fetchOutlierMapDashboard({ xMetric, yMetric })
@@ -81,7 +108,7 @@ export function OutlierAnalyticsPage() {
     if (!dashboard) return []
     return [...dashboard.points]
       .filter((point) => point.outlier_flag)
-      .sort((a, b) => b.distance_score - a.distance_score)
+      .sort((a, b) => asFiniteNumber(b.distance_score) - asFiniteNumber(a.distance_score))
       .slice(0, 120)
   }, [dashboard])
 
@@ -92,8 +119,8 @@ export function OutlierAnalyticsPage() {
   const innerHeight = plotHeight - margin.top - margin.bottom
 
   const baseViewport = useMemo<ChartViewport>(() => {
-    const xValues = filteredPoints.map((item) => item.x_value)
-    const yValues = filteredPoints.map((item) => item.y_value)
+    const xValues = filteredPoints.map((item) => asFiniteNumber(item.x_value)).filter(Number.isFinite)
+    const yValues = filteredPoints.map((item) => asFiniteNumber(item.y_value)).filter(Number.isFinite)
 
     const xMin = xValues.length ? Math.min(...xValues) : 0
     const xMax = xValues.length ? Math.max(...xValues) : 1
@@ -118,10 +145,10 @@ export function OutlierAnalyticsPage() {
   useEffect(() => {
     setViewport(baseViewport)
     setHoveredClaimId(undefined)
+    setIsPanning(false)
+    panSessionRef.current = null
+    panMovedRef.current = false
   }, [baseViewport])
-
-  if (error) return <div className="error-box">{error}</div>
-  if (!dashboard) return <div className="panel">Loading outlier analytics...</div>
 
   const activeViewport = viewport ?? baseViewport
   const xLower = activeViewport.xLower
@@ -190,11 +217,84 @@ export function OutlierAnalyticsPage() {
     setViewport(baseViewport)
   }
 
+  function handlePlotMouseDown(event: React.MouseEvent<SVGSVGElement>) {
+    if (event.button !== 0) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) return
+    event.preventDefault()
+
+    panSessionRef.current = {
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      rectWidth: rect.width,
+      rectHeight: rect.height,
+      startViewport: activeViewport,
+    }
+    panMovedRef.current = false
+    setHoveredClaimId(undefined)
+    setIsPanning(true)
+  }
+
+  useEffect(() => {
+    if (!isPanning) return
+
+    function handleMouseMove(event: MouseEvent) {
+      const panSession = panSessionRef.current
+      if (!panSession) return
+
+      const deltaClientX = event.clientX - panSession.startClientX
+      const deltaClientY = event.clientY - panSession.startClientY
+      if (Math.abs(deltaClientX) > 1 || Math.abs(deltaClientY) > 1) {
+        panMovedRef.current = true
+      }
+
+      const deltaSvgX = (deltaClientX / panSession.rectWidth) * plotWidth
+      const deltaSvgY = (deltaClientY / panSession.rectHeight) * plotHeight
+
+      const startXSpan = Math.max(1e-9, panSession.startViewport.xUpper - panSession.startViewport.xLower)
+      const startYSpan = Math.max(1e-9, panSession.startViewport.yUpper - panSession.startViewport.yLower)
+
+      let nextXLower = panSession.startViewport.xLower - (deltaSvgX / innerWidth) * startXSpan
+      let nextYLower = panSession.startViewport.yLower + (deltaSvgY / innerHeight) * startYSpan
+
+      const minXLower = baseViewport.xLower
+      const maxXLower = baseViewport.xUpper - startXSpan
+      const minYLower = baseViewport.yLower
+      const maxYLower = baseViewport.yUpper - startYSpan
+
+      nextXLower = Math.min(maxXLower, Math.max(minXLower, nextXLower))
+      nextYLower = Math.min(maxYLower, Math.max(minYLower, nextYLower))
+
+      setViewport({
+        xLower: nextXLower,
+        xUpper: nextXLower + startXSpan,
+        yLower: nextYLower,
+        yUpper: nextYLower + startYSpan,
+      })
+    }
+
+    function handleMouseUp() {
+      setIsPanning(false)
+      panSessionRef.current = null
+    }
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isPanning, baseViewport, innerHeight, innerWidth, plotHeight, plotWidth])
+
   const xTicks = buildTicks(xLower, xUpper, 6)
   const yTicks = buildTicks(yLower, yUpper, 6)
 
   const toX = (value: number) => margin.left + ((value - xLower) / (xUpper - xLower || 1)) * innerWidth
   const toY = (value: number) => margin.top + innerHeight - ((value - yLower) / (yUpper - yLower || 1)) * innerHeight
+
+  if (error) return <div className="error-box">{error}</div>
+  if (!dashboard) return <div className="panel">Loading outlier analytics...</div>
 
   return (
     <div className="app-page outlier-page">
@@ -283,7 +383,7 @@ export function OutlierAnalyticsPage() {
         </div>
       </CollapsiblePanel>
 
-      <CollapsiblePanel className="panel app-grow" title="2D Cluster and Outlier Map" allowFocusView>
+      <CollapsiblePanel className="panel app-grow outlier-map-panel" title="2D Cluster and Outlier Map" allowFocusView>
         <div className="outlier-legend">
           {dashboard.clusters.map((cluster) => (
             <div key={cluster.cluster_id} className="outlier-legend-item">
@@ -305,13 +405,16 @@ export function OutlierAnalyticsPage() {
             <p className="empty-muted">No points available for this metric/filter combination.</p>
           ) : (
             <svg
-              className="outlier-plot-svg"
+              className={`outlier-plot-svg${isPanning ? ' is-panning' : ''}`}
               viewBox={`0 0 ${plotWidth} ${plotHeight}`}
               role="img"
               aria-label="Outlier scatter plot"
               onWheel={handlePlotWheel}
               onDoubleClick={handlePlotReset}
-              onMouseLeave={() => setHoveredClaimId(undefined)}
+              onMouseDown={handlePlotMouseDown}
+              onMouseLeave={() => {
+                if (!isPanning) setHoveredClaimId(undefined)
+              }}
             >
               {xTicks.map((tick) => {
                 const x = toX(tick)
@@ -363,10 +466,20 @@ export function OutlierAnalyticsPage() {
                   fillOpacity={point.outlier_flag ? 0.88 : 0.72}
                   stroke={point.outlier_flag ? '#7f1321' : '#ffffff'}
                   strokeWidth={point.outlier_flag ? 1.3 : 0.9}
-                  onMouseEnter={() => setHoveredClaimId(point.claim_id)}
+                  onMouseEnter={() => {
+                    if (!isPanning) setHoveredClaimId(point.claim_id)
+                  }}
+                  onClick={() => {
+                    if (panMovedRef.current) {
+                      panMovedRef.current = false
+                      return
+                    }
+                    if (point.claim_id) navigate(`/claims/${point.claim_id}/analysis`)
+                  }}
+                  style={{ cursor: 'pointer' }}
                 >
                   <title>
-                    {`${point.employee_name} (${point.employee_id}) · Claim ${point.claim_id}`}
+                    {`${point.employee_name} (${point.employee_id}) · Claim ${point.claim_id} · Click to open details`}
                   </title>
                 </circle>
               ))}
@@ -377,12 +490,12 @@ export function OutlierAnalyticsPage() {
               <strong>{hoveredPoint.employee_name} ({hoveredPoint.employee_id})</strong>
               <p>Claim: {hoveredPoint.claim_id} · Dept: {hoveredPoint.department}</p>
               <p>
-                Location: {hoveredPoint.to_city || '-'}, {hoveredPoint.to_country || '-'} · Cost Factor {hoveredPoint.location_cost_factor.toFixed(2)}x
+                Location: {hoveredPoint.to_city || '-'}, {hoveredPoint.to_country || '-'} · Cost Factor {asFiniteNumber(hoveredPoint.location_cost_factor).toFixed(2)}x
               </p>
               <p>
                 {dashboard.x_label}: {formatMetricValue(hoveredPoint.x_value)} · {dashboard.y_label}: {formatMetricValue(hoveredPoint.y_value)}
               </p>
-              <p>Distance Score: {hoveredPoint.distance_score.toFixed(2)} · Cluster {hoveredPoint.cluster_id >= 0 ? hoveredPoint.cluster_id + 1 : 'Outlier'}</p>
+              <p>Distance Score: {asFiniteNumber(hoveredPoint.distance_score).toFixed(2)} · Cluster {hoveredPoint.cluster_id >= 0 ? hoveredPoint.cluster_id + 1 : 'Outlier'}</p>
             </div>
           )}
         </div>
@@ -429,9 +542,9 @@ export function OutlierAnalyticsPage() {
                   <td>{point.to_city || '-'}, {point.to_country || '-'}</td>
                   <td>{formatMetricValue(point.x_value)}</td>
                   <td>{formatMetricValue(point.y_value)}</td>
-                  <td>{point.distance_score.toFixed(2)}</td>
+                  <td>{asFiniteNumber(point.distance_score).toFixed(2)}</td>
                   <td>{point.cluster_id >= 0 ? `Cluster ${point.cluster_id + 1}` : 'Outlier'}</td>
-                  <td>{point.outlier_reasons.join(' · ') || '—'}</td>
+                  <td>{formatReasons(point.outlier_reasons)}</td>
                   <td>
                     {point.incorrect_flag ? 'Incorrect' : point.suspicious_flag ? 'Suspicious' : 'Unflagged'}
                   </td>

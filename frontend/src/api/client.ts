@@ -169,7 +169,76 @@ export async function fetchOutlierMapDashboard(params?: { xMetric?: string; yMet
       y_metric: params?.yMetric,
     }
   })
-  return response.data
+  const data = response.data as unknown as Record<string, unknown>
+
+  const metricOptionsRaw = Array.isArray(data.metric_options) ? data.metric_options : []
+  const metricOptions = metricOptionsRaw
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => {
+      const row = item as Record<string, unknown>
+      return {
+        key: String(row.key ?? ''),
+        label: String(row.label ?? row.key ?? ''),
+      }
+    })
+    .filter((item) => item.key)
+
+  const clustersRaw = Array.isArray(data.clusters) ? data.clusters : []
+  const clusters = clustersRaw
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => {
+      const row = item as Record<string, unknown>
+      return {
+        cluster_id: Number(row.cluster_id ?? -1),
+        label: String(row.label ?? 'Cluster'),
+        point_count: Number(row.point_count ?? 0),
+        centroid_x: Number(row.centroid_x ?? 0),
+        centroid_y: Number(row.centroid_y ?? 0),
+      }
+    })
+
+  const pointsRaw = Array.isArray(data.points) ? data.points : []
+  const points = pointsRaw
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => {
+      const row = item as Record<string, unknown>
+      const reasonsRaw = Array.isArray(row.outlier_reasons) ? row.outlier_reasons : []
+      return {
+        claim_id: String(row.claim_id ?? ''),
+        employee_id: String(row.employee_id ?? ''),
+        employee_name: String(row.employee_name ?? ''),
+        department: String(row.department ?? ''),
+        to_country: row.to_country == null ? null : String(row.to_country),
+        to_city: row.to_city == null ? null : String(row.to_city),
+        location_cost_factor: Number(row.location_cost_factor ?? 1),
+        x_value: Number(row.x_value ?? 0),
+        y_value: Number(row.y_value ?? 0),
+        x_zscore: Number(row.x_zscore ?? 0),
+        y_zscore: Number(row.y_zscore ?? 0),
+        distance_score: Number(row.distance_score ?? 0),
+        cluster_id: Number(row.cluster_id ?? -1),
+        outlier_flag: Boolean(row.outlier_flag),
+        outlier_reasons: reasonsRaw.map((reason) => String(reason)),
+        suspicious_flag: Boolean(row.suspicious_flag),
+        incorrect_flag: Boolean(row.incorrect_flag),
+        risk_level: row.risk_level == null ? null : String(row.risk_level),
+        risk_score: row.risk_score == null ? null : Number(row.risk_score),
+        detection_count: Number(row.detection_count ?? 0),
+      }
+    })
+    .filter((item) => item.claim_id)
+
+  return {
+    x_metric: String(data.x_metric ?? params?.xMetric ?? 'claim_total'),
+    y_metric: String(data.y_metric ?? params?.yMetric ?? 'trip_duration_days'),
+    x_label: String(data.x_label ?? 'X Axis'),
+    y_label: String(data.y_label ?? 'Y Axis'),
+    total_points: Number(data.total_points ?? 0),
+    outlier_points: Number(data.outlier_points ?? 0),
+    metric_options: metricOptions,
+    clusters,
+    points,
+  }
 }
 
 export async function fetchPolicyRules(): Promise<PolicyRule[]> {
