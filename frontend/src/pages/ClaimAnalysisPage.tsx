@@ -16,6 +16,26 @@ function severityClass(severity: string) {
   return 'chip low'
 }
 
+function toFactLabel(key: string) {
+  return key
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+function toFactValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '—'
+  if (typeof value === 'number') {
+    return value.toLocaleString('en-GB', { maximumFractionDigits: 3 })
+  }
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  if (Array.isArray(value)) {
+    if (!value.length) return '—'
+    return value.map((item) => toFactValue(item)).join(', ')
+  }
+  if (typeof value === 'object') return 'Structured data'
+  return String(value)
+}
+
 export function ClaimAnalysisPage() {
   const { claimId } = useParams<{ claimId: string }>()
   const navigate = useNavigate()
@@ -30,6 +50,7 @@ export function ClaimAnalysisPage() {
   const [status, setStatus] = useState('under_review')
   const [notes, setNotes] = useState('')
   const [dispositionReason, setDispositionReason] = useState('')
+  const [activeEvidence, setActiveEvidence] = useState<ClaimAnalysis['evidence_summary'][number] | null>(null)
 
   const canReview = user?.role === 'reviewer' || user?.role === 'administrator'
 
@@ -45,6 +66,15 @@ export function ClaimAnalysisPage() {
       .catch((err) => setError(String(err)))
       .finally(() => setLoading(false))
   }, [claimId])
+
+  useEffect(() => {
+    if (!activeEvidence) return
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setActiveEvidence(null)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [activeEvidence])
 
   async function handleSubmitReview(event: FormEvent) {
     event.preventDefault()
@@ -66,6 +96,27 @@ export function ClaimAnalysisPage() {
   if (loading) return <div className="panel">Loading analysis window...</div>
   if (error) return <div className="error-box">{error}</div>
   if (!analysis || !detail) return <div className="panel">No analysis data available.</div>
+
+  const claimProfileRows = [
+    { label: 'Employee', value: `${detail.employee_name} (${detail.employee_id})` },
+    { label: 'Department', value: detail.department },
+    { label: 'Trip Number', value: detail.trip_number },
+    { label: 'Trip Activity', value: detail.trip_activity },
+    { label: 'Trip Boundary', value: detail.trip_boundary },
+    { label: 'Expense Type', value: detail.expense_type },
+    { label: 'From', value: [detail.from_city, detail.from_country, detail.from_region].filter(Boolean).join(', ') },
+    { label: 'To', value: [detail.to_city, detail.to_country, detail.to_region].filter(Boolean).join(', ') },
+    { label: 'Destination City', value: detail.destination_city },
+    { label: 'Trip Start', value: detail.start_date ? dayjs(detail.start_date).format('DD MMM YYYY') : '—' },
+    { label: 'Trip End', value: detail.end_date ? dayjs(detail.end_date).format('DD MMM YYYY') : '—' },
+    { label: 'Settlement Date', value: detail.trip_settlement_date ? dayjs(detail.trip_settlement_date).format('DD MMM YYYY') : '—' },
+    { label: 'Trip Duration (Days)', value: detail.trip_duration_days },
+    { label: 'Claim Amount', value: `${detail.claim_total.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${detail.currency}` },
+    { label: 'Status', value: detail.status },
+    { label: 'Source Type', value: detail.source_type },
+    { label: 'Source Reference', value: detail.source_reference },
+    { label: 'Masked ID', value: detail.masked_id },
+  ]
 
   return (
     <div className="app-page analysis-page">
@@ -138,12 +189,42 @@ export function ClaimAnalysisPage() {
       <CollapsiblePanel className="panel two-col app-grow" allowFocusView>
         <article className="panel-scroll">
           <h3 className="section-title"><AnalyzeIcon size={16} />Evidence and Supporting Facts</h3>
+          <div className="claim-profile-card">
+            <h4>Claim Record Details</h4>
+            <p className="muted-text">Business-friendly view of the imported claim row and key travel context.</p>
+            <dl className="fact-grid">
+              {claimProfileRows.map((row) => (
+                <div key={row.label} className="fact-item">
+                  <dt>{row.label}</dt>
+                  <dd>{toFactValue(row.value)}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
           {analysis.evidence_summary.map((evidence) => (
-            <details key={evidence.detection_type} className="evidence-box" open>
-              <summary>{formatDetectionType(evidence.detection_type)}</summary>
-              <pre>{JSON.stringify(evidence.supporting_facts, null, 2)}</pre>
-              <pre>{JSON.stringify(evidence.source_references, null, 2)}</pre>
-            </details>
+            <section key={evidence.detection_type} className="evidence-box">
+              <div className="evidence-head">
+                <h4>{formatDetectionType(evidence.detection_type)}</h4>
+                <button className="small-btn" type="button" onClick={() => setActiveEvidence(evidence)}>
+                  View technical JSON
+                </button>
+              </div>
+              <dl className="fact-grid compact">
+                {Object.entries(evidence.supporting_facts).map(([key, value]) => (
+                  <div key={`${evidence.detection_type}-${key}`} className="fact-item">
+                    <dt>{toFactLabel(key)}</dt>
+                    <dd>{toFactValue(value)}</dd>
+                  </div>
+                ))}
+              </dl>
+              <div className="source-ref-list">
+                {Object.entries(evidence.source_references).map(([key, value]) => (
+                  <span key={`${evidence.detection_type}-src-${key}`} className="source-ref-pill">
+                    {toFactLabel(key)}: {toFactValue(value)}
+                  </span>
+                ))}
+              </div>
+            </section>
           ))}
         </article>
 
@@ -201,6 +282,23 @@ export function ClaimAnalysisPage() {
             <button type="submit"><span className="btn-inline"><AnalyzeIcon size={14} />Submit Decision</span></button>
           </form>
         </CollapsiblePanel>
+      )}
+
+      {activeEvidence && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setActiveEvidence(null)}>
+          <section className="modal-panel" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <h3>{formatDetectionType(activeEvidence.detection_type)} · Technical JSON</h3>
+              <button type="button" className="small-btn" onClick={() => setActiveEvidence(null)}>Close</button>
+            </div>
+            <div className="modal-body">
+              <h4>Supporting Facts (raw)</h4>
+              <pre>{JSON.stringify(activeEvidence.supporting_facts, null, 2)}</pre>
+              <h4>Source References (raw)</h4>
+              <pre>{JSON.stringify(activeEvidence.source_references, null, 2)}</pre>
+            </div>
+          </section>
+        </div>
       )}
     </div>
   )
