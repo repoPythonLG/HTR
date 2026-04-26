@@ -44,6 +44,14 @@ def upgrade_sqlite_schema(engine: Engine) -> None:
             ("expense_type", "TEXT"),
             ("masked_id", "TEXT"),
             ("trip_duration_days", "INTEGER"),
+            ("case_owner_id", "TEXT"),
+            ("case_priority", "TEXT DEFAULT 'standard'"),
+            ("case_sla_due_at", "DATETIME"),
+            ("case_opened_at", "DATETIME"),
+            ("case_closed_at", "DATETIME"),
+            ("case_tags", "TEXT DEFAULT '[]'"),
+            ("case_watchlist", "BOOLEAN DEFAULT 0"),
+            ("case_next_action", "TEXT"),
         ]
 
         for column_name, ddl_type in migration_columns:
@@ -55,3 +63,13 @@ def upgrade_sqlite_schema(engine: Engine) -> None:
         conn.execute(text("UPDATE claims SET suspicious_flag=0 WHERE suspicious_flag IS NULL"))
         conn.execute(text("UPDATE claims SET incorrect_flag=0 WHERE incorrect_flag IS NULL"))
         conn.execute(text("UPDATE claims SET risk_score_cached=0 WHERE risk_score_cached IS NULL"))
+        conn.execute(text("UPDATE claims SET case_priority='standard' WHERE case_priority IS NULL"))
+        conn.execute(text("UPDATE claims SET case_tags='[]' WHERE case_tags IS NULL"))
+        conn.execute(text("UPDATE claims SET case_watchlist=0 WHERE case_watchlist IS NULL"))
+        conn.execute(text("UPDATE claims SET case_opened_at=created_at WHERE case_opened_at IS NULL"))
+        conn.execute(
+            text(
+                "UPDATE claims SET case_closed_at=updated_at "
+                "WHERE case_closed_at IS NULL AND status IN ('reviewed', 'escalated')"
+            )
+        )

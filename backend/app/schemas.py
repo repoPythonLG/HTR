@@ -87,6 +87,38 @@ class ReviewerDecisionOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class CaseManagementIn(BaseModel):
+    case_owner_id: Optional[str] = None
+    case_priority: str = Field(default="standard", pattern="^(standard|priority|urgent|executive)$")
+    case_sla_due_at: Optional[datetime] = None
+    case_tags: List[str] = Field(default_factory=list)
+    case_watchlist: bool = False
+    case_next_action: Optional[str] = None
+
+
+class CaseManagementOut(CaseManagementIn):
+    claim_id: str
+    status: str
+    case_opened_at: Optional[datetime] = None
+    case_closed_at: Optional[datetime] = None
+
+
+class CaseTimelineEventOut(BaseModel):
+    event_id: str
+    event_type: str
+    title: str
+    description: str
+    timestamp: datetime
+    actor: Optional[str] = None
+    severity: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CaseTimelineOut(BaseModel):
+    claim_id: str
+    events: List[CaseTimelineEventOut]
+
+
 class ClaimSummaryOut(BaseModel):
     claim_id: str
     employee_id: str
@@ -107,6 +139,13 @@ class ClaimSummaryOut(BaseModel):
     source_type: str
     suspicious_flag: bool
     incorrect_flag: bool
+    case_owner_id: Optional[str] = None
+    case_priority: str = "standard"
+    case_sla_due_at: Optional[datetime] = None
+    case_opened_at: Optional[datetime] = None
+    case_closed_at: Optional[datetime] = None
+    case_watchlist: bool = False
+    case_next_action: Optional[str] = None
     risk_level: Optional[str] = None
     risk_score: Optional[float] = None
     primary_red_flag: Optional[str] = None
@@ -144,6 +183,14 @@ class ClaimDetailOut(BaseModel):
     suspicious_flag: bool
     incorrect_flag: bool
     risk_score_cached: float
+    case_owner_id: Optional[str] = None
+    case_priority: str = "standard"
+    case_sla_due_at: Optional[datetime] = None
+    case_opened_at: Optional[datetime] = None
+    case_closed_at: Optional[datetime] = None
+    case_tags: List[str] = Field(default_factory=list)
+    case_watchlist: bool = False
+    case_next_action: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     documents: List[DocumentOut]

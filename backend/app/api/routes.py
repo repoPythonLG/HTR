@@ -15,9 +15,13 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.models import Claim, Detection, ExtractedField, PolicyRule, ReceiptDocument, ReviewerDecision, RiskAssessment, User
+from app.models import CaseAuditEvent, Claim, Detection, ExtractedField, PolicyRule, ReceiptDocument, ReviewerDecision, RiskAssessment, User
 from app.schemas import (
     AnalyzeResponse,
+    CaseManagementIn,
+    CaseManagementOut,
+    CaseTimelineEventOut,
+    CaseTimelineOut,
     ClaimAnalysisOut,
     ClaimDetailOut,
     ClaimSummaryOut,
@@ -76,6 +80,74 @@ def _enforce_employee_claim_scope(current_user: User, claim: Claim) -> None:
 
 def _sample_file_path() -> Path:
     return Path(__file__).resolve().parents[2] / "data" / "templates" / "sabic_claims_example_1000.xlsx"
+
+
+def _display_label(value: Optional[str]) -> str:
+    if not value:
+        return "Not recorded"
+    return value.replace("_", " ").replace("-", " ").title()
+
+
+def _case_management_out(claim: Claim) -> CaseManagementOut:
+    return CaseManagementOut(
+        claim_id=claim.claim_id,
+        status=claim.status,
+        case_owner_id=claim.case_owner_id,
+        case_priority=claim.case_priority or "standard",
+        case_sla_due_at=claim.case_sla_due_at,
+        case_opened_at=claim.case_opened_at,
+        case_closed_at=claim.case_closed_at,
+        case_tags=claim.case_tags or [],
+        case_watchlist=bool(claim.case_watchlist),
+        case_next_action=claim.case_next_action,
+    )
+
+
+def _timeline_event(
+    *,
+    event_id: str,
+    event_type: str,
+    title: str,
+    description: str,
+    timestamp: Optional[datetime],
+    actor: Optional[str] = None,
+    severity: Optional[str] = None,
+    metadata: Optional[Dict] = None,
+) -> CaseTimelineEventOut:
+    return CaseTimelineEventOut(
+        event_id=event_id,
+        event_type=event_type,
+        title=title,
+        description=description,
+        timestamp=timestamp or datetime.utcnow(),
+        actor=actor,
+        severity=severity,
+        metadata=metadata or {},
+    )
+
+
+def _record_case_event(
+    db: Session,
+    *,
+    claim_id: str,
+    event_type: str,
+    title: str,
+    description: str,
+    actor_id: Optional[str],
+    severity: Optional[str] = None,
+    metadata: Optional[Dict] = None,
+) -> CaseAuditEvent:
+    event = CaseAuditEvent(
+        claim_id=claim_id,
+        event_type=event_type,
+        title=title,
+        description=description,
+        actor_id=actor_id,
+        severity=severity,
+        event_metadata=metadata or {},
+    )
+    db.add(event)
+    return event
 
 
 def _active_import_out_or_404() -> ActiveImportOut:
@@ -138,6 +210,13 @@ def _build_summary_rows(db: Session, claims: List[Claim]) -> List[ClaimSummaryOu
                 source_type=claim.source_type,
                 suspicious_flag=claim.suspicious_flag,
                 incorrect_flag=claim.incorrect_flag,
+                case_owner_id=claim.case_owner_id,
+                case_priority=claim.case_priority or "standard",
+                case_sla_due_at=claim.case_sla_due_at,
+                case_opened_at=claim.case_opened_at,
+                case_closed_at=claim.case_closed_at,
+                case_watchlist=bool(claim.case_watchlist),
+                case_next_action=claim.case_next_action,
                 risk_level=risk.risk_level if risk else None,
                 risk_score=risk.risk_score if risk else claim.risk_score_cached,
                 primary_red_flag=risk.primary_red_flag if risk else None,
@@ -145,6 +224,21 @@ def _build_summary_rows(db: Session, claims: List[Claim]) -> List[ClaimSummaryOu
             )
         )
     return output
+
+
+def _normalise_case_tags(tags: List[str]) -> List[str]:
+    cleaned: List[str] = []
+    seen: set[str] = set()
+    for tag in tags:
+        value = str(tag).strip()
+        if not value:
+            continue
+        key = value.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(value[:48])
+    return cleaned[:12]
 
 
 @router.post("/auth/login", response_model=TokenOut)
@@ -198,6 +292,7 @@ def upload_claim(
         claim_total=claim_total,
         currency=currency,
         status="uploaded",
+        case_opened_at=datetime.utcnow(),
         source_type="document_upload",
         submitted_by_user_id=current_user.user_id,
     )
@@ -287,6 +382,7 @@ def import_excel_claims(
                 claim_total=claim_payload.get("claim_total", 0.0),
                 currency=claim_payload.get("currency", "SAR"),
                 status="uploaded",
+                case_opened_at=datetime.utcnow(),
                 source_type="excel_import",
                 source_reference=claim_payload.get("source_reference"),
                 submitted_by_user_id=current_user.user_id,
@@ -544,6 +640,266 @@ def get_claim(
     return claim
 
 
+@router.get("/claims/{claim_id}/case-management", response_model=CaseManagementOut)
+def get_claim_case_management(
+    claim_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("employee", "reviewer", "administrator")),
+):
+    claim = db.execute(select(Claim).where(Claim.claim_id == claim_id)).scalars().first()
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found")
+    _enforce_employee_claim_scope(current_user, claim)
+    return _case_management_out(claim)
+
+
+@router.put("/claims/{claim_id}/case-management", response_model=CaseManagementOut)
+def update_claim_case_management(
+    claim_id: str,
+    payload: CaseManagementIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("reviewer", "administrator")),
+):
+    claim = db.execute(select(Claim).where(Claim.claim_id == claim_id)).scalars().first()
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found")
+
+    owner_id = payload.case_owner_id.strip() if payload.case_owner_id else None
+    next_action = payload.case_next_action.strip() if payload.case_next_action else None
+    tags = _normalise_case_tags(payload.case_tags)
+
+    changes: List[Dict] = []
+
+    def set_case_field(field_name: str, label: str, new_value):
+        old_value = getattr(claim, field_name)
+        if old_value != new_value:
+            changes.append(
+                {
+                    "field": label,
+                    "from": str(old_value) if old_value not in (None, "") else "Not set",
+                    "to": str(new_value) if new_value not in (None, "") else "Not set",
+                }
+            )
+            setattr(claim, field_name, new_value)
+
+    set_case_field("case_owner_id", "Owner", owner_id)
+    set_case_field("case_priority", "Priority", payload.case_priority or "standard")
+    set_case_field("case_sla_due_at", "SLA due", payload.case_sla_due_at)
+    set_case_field("case_tags", "Tags", tags)
+    set_case_field("case_watchlist", "Watchlist", bool(payload.case_watchlist))
+    set_case_field("case_next_action", "Next action", next_action)
+
+    if not claim.case_opened_at:
+        claim.case_opened_at = datetime.utcnow()
+        changes.append({"field": "Case opened", "from": "Not set", "to": claim.case_opened_at.isoformat()})
+
+    if claim.status in {"uploaded", "analyzed"}:
+        changes.append({"field": "Status", "from": claim.status, "to": "under_review"})
+        claim.status = "under_review"
+
+    claim.updated_at = datetime.utcnow()
+
+    if changes:
+        changed_labels = ", ".join(item["field"] for item in changes)
+        _record_case_event(
+            db,
+            claim_id=claim.claim_id,
+            event_type="case_management_update",
+            title="Case management updated",
+            description=f"Updated case fields: {changed_labels}.",
+            actor_id=current_user.username,
+            severity=claim.case_priority,
+            metadata={"changes": changes},
+        )
+
+    db.commit()
+    db.refresh(claim)
+    return _case_management_out(claim)
+
+
+@router.get("/claims/{claim_id}/case-timeline", response_model=CaseTimelineOut)
+def get_claim_case_timeline(
+    claim_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("employee", "reviewer", "administrator")),
+):
+    claim = (
+        db.execute(
+            select(Claim)
+            .options(
+                joinedload(Claim.documents),
+                joinedload(Claim.detections),
+                joinedload(Claim.risk_assessment),
+                joinedload(Claim.reviewer_decisions),
+                joinedload(Claim.case_audit_events),
+            )
+            .where(Claim.claim_id == claim_id)
+        )
+        .unique()
+        .scalars()
+        .first()
+    )
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found")
+    _enforce_employee_claim_scope(current_user, claim)
+
+    events: List[CaseTimelineEventOut] = [
+        _timeline_event(
+            event_id=f"claim-created-{claim.claim_id}",
+            event_type="claim_created",
+            title="Claim record created",
+            description=(
+                f"{claim.employee_name} submitted a {claim.claim_total:,.2f} {claim.currency} "
+                f"{_display_label(claim.expense_type)} for {claim.destination_city or claim.to_city or 'an unspecified destination'}."
+            ),
+            timestamp=claim.created_at,
+            actor=claim.employee_id,
+            severity="neutral",
+            metadata={
+                "source_type": claim.source_type,
+                "source_reference": claim.source_reference,
+                "trip_number": claim.trip_number,
+                "status": claim.status,
+            },
+        )
+    ]
+
+    if claim.case_opened_at:
+        events.append(
+            _timeline_event(
+                event_id=f"case-opened-{claim.claim_id}",
+                event_type="case_opened",
+                title="Case file opened",
+                description="Case file available for reviewer triage, assignment, SLA tracking, and audit review.",
+                timestamp=claim.case_opened_at,
+                actor=claim.case_owner_id,
+                severity=claim.case_priority or "standard",
+                metadata={
+                    "owner": claim.case_owner_id,
+                    "priority": claim.case_priority,
+                    "sla_due_at": claim.case_sla_due_at.isoformat() if claim.case_sla_due_at else None,
+                    "watchlist": claim.case_watchlist,
+                    "tags": claim.case_tags or [],
+                    "next_action": claim.case_next_action,
+                },
+            )
+        )
+
+    for document in sorted(claim.documents, key=lambda item: item.created_at or datetime.min):
+        events.append(
+            _timeline_event(
+                event_id=f"document-{document.document_id}",
+                event_type="source_document",
+                title="Source document registered",
+                description=f"{document.file_name} was stored as source evidence for this claim.",
+                timestamp=document.created_at,
+                severity="neutral",
+                metadata={
+                    "document_id": document.document_id,
+                    "mime_type": document.mime_type,
+                    "document_type": document.document_type,
+                    "image_hash": document.image_hash,
+                },
+            )
+        )
+
+    if claim.risk_assessment:
+        events.append(
+            _timeline_event(
+                event_id=f"risk-{claim.risk_assessment.risk_id}",
+                event_type="risk_analysis",
+                title="Risk analysis generated",
+                description=(
+                    f"Risk scored as {claim.risk_assessment.risk_level} "
+                    f"at {claim.risk_assessment.risk_score:.1f} points."
+                ),
+                timestamp=claim.risk_assessment.generated_at,
+                severity=claim.risk_assessment.risk_level,
+                metadata={
+                    "risk_score": claim.risk_assessment.risk_score,
+                    "risk_level": claim.risk_assessment.risk_level,
+                    "primary_red_flag": claim.risk_assessment.primary_red_flag,
+                    "model_version": claim.risk_assessment.model_version,
+                    "contributions": claim.risk_assessment.contributions,
+                },
+            )
+        )
+
+    for detection in sorted(claim.detections, key=lambda item: item.created_at or datetime.min):
+        events.append(
+            _timeline_event(
+                event_id=f"detection-{detection.detection_id}",
+                event_type="detection",
+                title=f"{_display_label(detection.detection_type)} detected",
+                description=detection.human_readable_reason,
+                timestamp=detection.created_at,
+                severity=detection.severity,
+                metadata={
+                    "detection_type": detection.detection_type,
+                    "recommended_action": detection.recommended_action,
+                    "confidence_score": detection.confidence_score,
+                    "risk_weight": detection.risk_weight,
+                    "policy_reference": detection.policy_reference,
+                },
+            )
+        )
+
+    audit_decision_ids: set[str] = set()
+    for audit_event in sorted(claim.case_audit_events, key=lambda item: item.created_at or datetime.min):
+        decision_id = (audit_event.event_metadata or {}).get("decision_id")
+        if decision_id:
+            audit_decision_ids.add(str(decision_id))
+        events.append(
+            _timeline_event(
+                event_id=f"case-audit-{audit_event.event_id}",
+                event_type=audit_event.event_type,
+                title=audit_event.title,
+                description=audit_event.description,
+                timestamp=audit_event.created_at,
+                actor=audit_event.actor_id,
+                severity=audit_event.severity,
+                metadata=audit_event.event_metadata or {},
+            )
+        )
+
+    for decision in sorted(claim.reviewer_decisions, key=lambda item: item.timestamp or datetime.min):
+        if decision.decision_id in audit_decision_ids:
+            continue
+        events.append(
+            _timeline_event(
+                event_id=f"review-decision-{decision.decision_id}",
+                event_type="review_decision",
+                title=f"Reviewer decision: {_display_label(decision.status)}",
+                description=decision.notes or decision.disposition_reason or "Reviewer decision recorded.",
+                timestamp=decision.timestamp,
+                actor=decision.reviewer_id,
+                severity=decision.status,
+                metadata={
+                    "decision_id": decision.decision_id,
+                    "status": decision.status,
+                    "disposition_reason": decision.disposition_reason,
+                },
+            )
+        )
+
+    if claim.case_closed_at:
+        events.append(
+            _timeline_event(
+                event_id=f"case-closed-{claim.claim_id}",
+                event_type="case_closed",
+                title="Case removed from active risk queue",
+                description=f"Final case status is {_display_label(claim.status)}.",
+                timestamp=claim.case_closed_at,
+                actor=claim.case_owner_id,
+                severity=claim.status,
+                metadata={"status": claim.status},
+            )
+        )
+
+    events.sort(key=lambda item: item.timestamp)
+    return CaseTimelineOut(claim_id=claim.claim_id, events=events)
+
+
 @router.get("/claims/{claim_id}/analysis", response_model=ClaimAnalysisOut)
 def claim_analysis_view(
     claim_id: str,
@@ -655,15 +1011,38 @@ def review_action(
         disposition_reason=payload.disposition_reason,
     )
     db.add(decision)
+    db.flush()
 
     status_text = payload.status.lower()
     if status_text in {"escalated", "escalate"}:
         claim.status = "escalated"
         claim.suspicious_flag = True
+        claim.case_closed_at = datetime.utcnow()
     elif status_text in {"approved", "dismissed", "completed"}:
         claim.status = "reviewed"
+        claim.case_closed_at = datetime.utcnow()
     else:
         claim.status = "under_review"
+        claim.case_opened_at = claim.case_opened_at or datetime.utcnow()
+        claim.case_closed_at = None
+
+    claim.updated_at = datetime.utcnow()
+
+    _record_case_event(
+        db,
+        claim_id=claim.claim_id,
+        event_type="review_decision",
+        title=f"Reviewer decision: {_display_label(payload.status)}",
+        description=payload.notes or payload.disposition_reason or "Reviewer disposition submitted.",
+        actor_id=payload.reviewer_id,
+        severity=claim.status,
+        metadata={
+            "decision_id": decision.decision_id,
+            "status": payload.status,
+            "disposition_reason": payload.disposition_reason,
+            "claim_status": claim.status,
+        },
+    )
 
     db.commit()
     db.refresh(decision)

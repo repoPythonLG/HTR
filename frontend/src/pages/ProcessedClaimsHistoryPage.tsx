@@ -13,6 +13,14 @@ function statusChipClass(status: string) {
   return 'chip medium'
 }
 
+function priorityChipClass(priority?: string | null) {
+  const value = (priority || 'standard').toLowerCase()
+  if (value === 'executive') return 'chip critical'
+  if (value === 'urgent') return 'chip high'
+  if (value === 'priority') return 'chip medium'
+  return 'chip low'
+}
+
 export function ProcessedClaimsHistoryPage() {
   const navigate = useNavigate()
 
@@ -118,6 +126,7 @@ export function ProcessedClaimsHistoryPage() {
                 <th>Trip Profile</th>
                 <th>Amount</th>
                 <th>Final Status</th>
+                <th>Case File</th>
                 <th>Filed</th>
                 <th>Actions</th>
               </tr>
@@ -125,7 +134,7 @@ export function ProcessedClaimsHistoryPage() {
             <tbody>
               {filteredClaims.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="empty-table">
+                  <td colSpan={9} className="empty-table">
                     No processed claims match your filters.
                   </td>
                 </tr>
@@ -151,6 +160,11 @@ export function ProcessedClaimsHistoryPage() {
                   </td>
                   <td>{claim.claim_total.toFixed(2)} {claim.currency}</td>
                   <td><span className={statusChipClass(claim.status)}>{claim.status}</span></td>
+                  <td>
+                    <span className={priorityChipClass(claim.case_priority)}>{claim.case_priority || 'standard'}</span>
+                    <p>{claim.case_owner_id || 'Unassigned'}</p>
+                    <p>{claim.case_closed_at ? `Closed ${dayjs(claim.case_closed_at).format('DD MMM HH:mm')}` : 'Closure pending'}</p>
+                  </td>
                   <td>{dayjs(claim.created_at).format('DD MMM YYYY HH:mm')}</td>
                   <td>
                     <button className="small-btn" onClick={() => navigate(`/claims/${claim.claim_id}/analysis`)}>
@@ -166,4 +180,3 @@ export function ProcessedClaimsHistoryPage() {
     </div>
   )
 }
-

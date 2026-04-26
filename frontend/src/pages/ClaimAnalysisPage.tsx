@@ -1,11 +1,11 @@
 import dayjs from 'dayjs'
 import { FormEvent, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { fetchClaimAnalysis, fetchClaimDetail, getDocumentUrl, submitReviewAction } from '../api/client'
-import { AnalyzeIcon, ClaimsIcon, DocumentIcon, RiskIcon, WrongClaimIcon } from '../components/BrandIcons'
+import { fetchCaseTimeline, fetchClaimAnalysis, fetchClaimDetail, getDocumentUrl, submitReviewAction, updateCaseManagement } from '../api/client'
+import { AnalyzeIcon, ClaimsIcon, DocumentIcon, RiskIcon, UsersIcon, WrongClaimIcon } from '../components/BrandIcons'
 import { CollapsiblePanel } from '../components/CollapsiblePanel'
 import { useAuth } from '../context/AuthContext'
-import { ClaimAnalysis, ClaimDetail } from '../types'
+import { CasePriority, CaseTimeline, CaseTimelineEvent, ClaimAnalysis, ClaimDetail } from '../types'
 import { formatDetectionType } from '../utils/formatters'
 
 function severityClass(severity: string) {
@@ -36,6 +36,61 @@ function toFactValue(value: unknown): string {
   return String(value)
 }
 
+type CaseFormState = {
+  ownerId: string
+  priority: CasePriority
+  slaDueAt: string
+  tags: string
+  watchlist: boolean
+  nextAction: string
+}
+
+const initialCaseForm: CaseFormState = {
+  ownerId: '',
+  priority: 'standard',
+  slaDueAt: '',
+  tags: '',
+  watchlist: false,
+  nextAction: ''
+}
+
+function toLocalDateTimeInput(value?: string | null) {
+  if (!value) return ''
+  return dayjs(value).format('YYYY-MM-DDTHH:mm')
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return '—'
+  return dayjs(value).format('DD MMM YYYY HH:mm')
+}
+
+function priorityChipClass(priority?: string | null) {
+  const value = (priority || 'standard').toLowerCase()
+  if (value === 'executive') return 'chip critical'
+  if (value === 'urgent') return 'chip high'
+  if (value === 'priority') return 'chip medium'
+  return 'chip low'
+}
+
+function timelineToneClass(value?: string | null) {
+  const normalized = (value || '').toLowerCase()
+  if (['critical', 'executive', 'escalated'].includes(normalized)) return 'timeline-critical'
+  if (['high', 'urgent', 'reviewed'].includes(normalized)) return 'timeline-high'
+  if (['medium', 'priority', 'under_review'].includes(normalized)) return 'timeline-medium'
+  if (['low', 'standard', 'neutral', 'uploaded', 'analyzed'].includes(normalized)) return 'timeline-low'
+  return 'timeline-neutral'
+}
+
+function slaStatus(detail: ClaimDetail) {
+  if (!detail.case_sla_due_at) return { label: 'No SLA set', className: 'chip medium' }
+  if (detail.case_closed_at) return { label: 'Closed', className: 'chip low' }
+  const due = dayjs(detail.case_sla_due_at)
+  const hoursRemaining = due.diff(dayjs(), 'hour')
+  if (hoursRemaining < 0) return { label: 'Overdue', className: 'chip critical' }
+  if (hoursRemaining <= 24) return { label: 'Due soon', className: 'chip high' }
+  return { label: 'On track', className: 'chip low' }
+}
+
 export function ClaimAnalysisPage() {
   const { claimId } = useParams<{ claimId: string }>()
   const navigate = useNavigate()
@@ -43,6 +98,7 @@ export function ClaimAnalysisPage() {
 
   const [analysis, setAnalysis] = useState<ClaimAnalysis>()
   const [detail, setDetail] = useState<ClaimDetail>()
+  const [timeline, setTimeline] = useState<CaseTimeline>()
   const [error, setError] = useState<string>()
   const [loading, setLoading] = useState(false)
 
@@ -51,31 +107,49 @@ export function ClaimAnalysisPage() {
   const [notes, setNotes] = useState('')
   const [dispositionReason, setDispositionReason] = useState('')
   const [activeEvidence, setActiveEvidence] = useState<ClaimAnalysis['evidence_summary'][number] | null>(null)
+  const [activeTimelineEvent, setActiveTimelineEvent] = useState<CaseTimelineEvent | null>(null)
   const [submittingReview, setSubmittingReview] = useState(false)
+  const [caseForm, setCaseForm] = useState<CaseFormState>(initialCaseForm)
+  const [caseSaving, setCaseSaving] = useState(false)
+  const [caseMessage, setCaseMessage] = useState<string>()
 
   const canReview = user?.role === 'reviewer' || user?.role === 'administrator'
+
+  function hydrateCaseForm(claim: ClaimDetail) {
+    setCaseForm({
+      ownerId: claim.case_owner_id || user?.employee_code || user?.username || '',
+      priority: claim.case_priority || 'standard',
+      slaDueAt: toLocalDateTimeInput(claim.case_sla_due_at),
+      tags: (claim.case_tags || []).join(', '),
+      watchlist: Boolean(claim.case_watchlist),
+      nextAction: claim.case_next_action || ''
+    })
+  }
 
   useEffect(() => {
     if (!claimId) return
     setLoading(true)
     setError(undefined)
-    Promise.all([fetchClaimAnalysis(claimId), fetchClaimDetail(claimId)])
-      .then(([analysisResponse, detailResponse]) => {
+    Promise.all([fetchClaimAnalysis(claimId), fetchClaimDetail(claimId), fetchCaseTimeline(claimId)])
+      .then(([analysisResponse, detailResponse, timelineResponse]) => {
         setAnalysis(analysisResponse)
         setDetail(detailResponse)
+        setTimeline(timelineResponse)
+        hydrateCaseForm(detailResponse)
       })
       .catch((err) => setError(String(err)))
       .finally(() => setLoading(false))
-  }, [claimId])
+  }, [claimId, user?.employee_code, user?.username])
 
   useEffect(() => {
-    if (!activeEvidence) return
+    if (!activeEvidence && !activeTimelineEvent) return
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') setActiveEvidence(null)
+      if (event.key === 'Escape') setActiveTimelineEvent(null)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [activeEvidence])
+  }, [activeEvidence, activeTimelineEvent])
 
   useEffect(() => {
     if (!canReview) return
@@ -117,6 +191,38 @@ export function ClaimAnalysisPage() {
     }
   }
 
+  async function handleSaveCase(event: FormEvent) {
+    event.preventDefault()
+    if (!claimId) return
+
+    setCaseSaving(true)
+    setCaseMessage(undefined)
+    setError(undefined)
+    try {
+      await updateCaseManagement(claimId, {
+        case_owner_id: caseForm.ownerId.trim() || null,
+        case_priority: caseForm.priority,
+        case_sla_due_at: caseForm.slaDueAt ? new Date(caseForm.slaDueAt).toISOString() : null,
+        case_tags: caseForm.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
+        case_watchlist: caseForm.watchlist,
+        case_next_action: caseForm.nextAction.trim() || null
+      })
+
+      const [detailResponse, timelineResponse] = await Promise.all([
+        fetchClaimDetail(claimId),
+        fetchCaseTimeline(claimId)
+      ])
+      setDetail(detailResponse)
+      setTimeline(timelineResponse)
+      hydrateCaseForm(detailResponse)
+      setCaseMessage('Case file saved. Audit timeline updated.')
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setCaseSaving(false)
+    }
+  }
+
   if (loading) return <div className="panel">Loading analysis window...</div>
   if (error) return <div className="error-box">{error}</div>
   if (!analysis || !detail) return <div className="panel">No analysis data available.</div>
@@ -141,6 +247,19 @@ export function ClaimAnalysisPage() {
     { label: 'Source Reference', value: detail.source_reference },
     { label: 'Masked ID', value: detail.masked_id },
   ]
+
+  const caseRows = [
+    { label: 'Case Owner', value: detail.case_owner_id },
+    { label: 'Priority', value: detail.case_priority },
+    { label: 'SLA Due', value: formatDateTime(detail.case_sla_due_at) },
+    { label: 'Case Opened', value: formatDateTime(detail.case_opened_at) },
+    { label: 'Case Closed', value: formatDateTime(detail.case_closed_at) },
+    { label: 'Watchlist', value: detail.case_watchlist },
+    { label: 'Tags', value: (detail.case_tags || []).join(', ') },
+    { label: 'Next Action', value: detail.case_next_action },
+  ]
+
+  const sla = slaStatus(detail)
 
   return (
     <div className="app-page analysis-page">
@@ -178,6 +297,150 @@ export function ClaimAnalysisPage() {
             <strong>{analysis.findings.length}</strong>
           </article>
         </div>
+      </CollapsiblePanel>
+
+      <CollapsiblePanel className="panel two-col app-grow case-management-panel" title="Case Management and Audit Timeline" allowFocusView>
+        <article className="panel-scroll case-workspace">
+          <div className="section-title-row">
+            <h3 className="section-title"><UsersIcon size={16} />Case Management</h3>
+            <span className={sla.className}>{sla.label}</span>
+          </div>
+
+          <div className="case-command-card">
+            <div>
+              <p className="eyebrow">Current Case State</p>
+              <h4>{detail.case_owner_id || 'Unassigned'} · {detail.case_priority || 'standard'}</h4>
+              <p className="muted-text">
+                SLA {formatDateTime(detail.case_sla_due_at)} · {detail.case_watchlist ? 'Watchlisted' : 'Not watchlisted'}
+              </p>
+            </div>
+            <span className={priorityChipClass(detail.case_priority)}>{detail.case_priority || 'standard'}</span>
+          </div>
+
+          {canReview ? (
+            <form className="case-form" onSubmit={handleSaveCase}>
+              <div className="split-row">
+                <label>
+                  Case Owner
+                  <input
+                    value={caseForm.ownerId}
+                    onChange={(event) => setCaseForm((current) => ({ ...current, ownerId: event.target.value }))}
+                    placeholder="reviewer@sabic.local"
+                  />
+                </label>
+                <label>
+                  Priority
+                  <select
+                    value={caseForm.priority}
+                    onChange={(event) => setCaseForm((current) => ({ ...current, priority: event.target.value as CasePriority }))}
+                  >
+                    <option value="standard">Standard</option>
+                    <option value="priority">Priority</option>
+                    <option value="urgent">Urgent</option>
+                    <option value="executive">Executive</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="split-row">
+                <label>
+                  SLA Due
+                  <input
+                    type="datetime-local"
+                    value={caseForm.slaDueAt}
+                    onChange={(event) => setCaseForm((current) => ({ ...current, slaDueAt: event.target.value }))}
+                  />
+                </label>
+                <label className="checkbox-inline case-watch-toggle">
+                  <input
+                    type="checkbox"
+                    checked={caseForm.watchlist}
+                    onChange={(event) => setCaseForm((current) => ({ ...current, watchlist: event.target.checked }))}
+                  />
+                  Add to reviewer watchlist
+                </label>
+              </div>
+
+              <label>
+                Tags
+                <input
+                  value={caseForm.tags}
+                  onChange={(event) => setCaseForm((current) => ({ ...current, tags: event.target.value }))}
+                  placeholder="executive review, hotel variance, policy exception"
+                />
+              </label>
+
+              <label>
+                Next Action
+                <textarea
+                  value={caseForm.nextAction}
+                  onChange={(event) => setCaseForm((current) => ({ ...current, nextAction: event.target.value }))}
+                  rows={3}
+                  placeholder="Request hotel invoice, validate itinerary, escalate to HR business partner..."
+                />
+              </label>
+
+              {caseMessage && <div className="success-box">{caseMessage}</div>}
+              <button type="submit" disabled={caseSaving}>
+                <span className="btn-inline"><DocumentIcon size={14} />{caseSaving ? 'Saving case...' : 'Save Case File'}</span>
+              </button>
+            </form>
+          ) : (
+            <dl className="fact-grid">
+              {caseRows.map((row) => (
+                <div key={row.label} className="fact-item">
+                  <dt>{row.label}</dt>
+                  <dd>{toFactValue(row.value)}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+
+          {canReview && (
+            <dl className="fact-grid case-summary-grid">
+              {caseRows.map((row) => (
+                <div key={row.label} className="fact-item">
+                  <dt>{row.label}</dt>
+                  <dd>{toFactValue(row.value)}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </article>
+
+        <article className="panel-scroll">
+          <div className="section-title-row">
+            <h3 className="section-title"><DocumentIcon size={16} />Audit Timeline</h3>
+            <span className="source-ref-pill">{timeline?.events.length || 0} events</span>
+          </div>
+          <div className="case-timeline">
+            {(!timeline || timeline.events.length === 0) && (
+              <p className="empty-muted">No case events have been recorded yet.</p>
+            )}
+            {timeline?.events.map((event) => (
+              <article key={event.event_id} className={`timeline-item ${timelineToneClass(event.severity)}`}>
+                <span className="timeline-dot" aria-hidden="true" />
+                <div className="timeline-card">
+                  <div className="timeline-head">
+                    <div>
+                      <h4>{event.title}</h4>
+                      <p>{formatDateTime(event.timestamp)}</p>
+                    </div>
+                    <button className="small-btn ghost-btn" type="button" onClick={() => setActiveTimelineEvent(event)}>
+                      Details
+                    </button>
+                  </div>
+                  <p className="timeline-description">{event.description}</p>
+                  <div className="timeline-meta">
+                    <span>{formatDetectionType(event.event_type)}</span>
+                    {event.actor && <span>Actor: {event.actor}</span>}
+                    {event.severity && <span>{event.severity}</span>}
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </article>
       </CollapsiblePanel>
 
       <CollapsiblePanel className="panel table-panel app-grow" allowFocusView>
@@ -322,6 +585,41 @@ export function ClaimAnalysisPage() {
               <pre>{JSON.stringify(activeEvidence.supporting_facts, null, 2)}</pre>
               <h4>Source References (raw)</h4>
               <pre>{JSON.stringify(activeEvidence.source_references, null, 2)}</pre>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {activeTimelineEvent && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setActiveTimelineEvent(null)}>
+          <section className="modal-panel" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <h3>{activeTimelineEvent.title} · Audit Event</h3>
+              <button type="button" className="small-btn" onClick={() => setActiveTimelineEvent(null)}>Close</button>
+            </div>
+            <div className="modal-body">
+              <dl className="fact-grid">
+                <div className="fact-item">
+                  <dt>Event Type</dt>
+                  <dd>{formatDetectionType(activeTimelineEvent.event_type)}</dd>
+                </div>
+                <div className="fact-item">
+                  <dt>Timestamp</dt>
+                  <dd>{formatDateTime(activeTimelineEvent.timestamp)}</dd>
+                </div>
+                <div className="fact-item">
+                  <dt>Actor</dt>
+                  <dd>{toFactValue(activeTimelineEvent.actor)}</dd>
+                </div>
+                <div className="fact-item">
+                  <dt>Severity</dt>
+                  <dd>{toFactValue(activeTimelineEvent.severity)}</dd>
+                </div>
+              </dl>
+              <h4>Description</h4>
+              <p>{activeTimelineEvent.description}</p>
+              <h4>Event Metadata (raw)</h4>
+              <pre>{JSON.stringify(activeTimelineEvent.metadata, null, 2)}</pre>
             </div>
           </section>
         </div>

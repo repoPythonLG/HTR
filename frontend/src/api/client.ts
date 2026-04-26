@@ -1,6 +1,9 @@
 import axios from 'axios'
 import {
   AuthToken,
+  CaseManagement,
+  CaseManagementPayload,
+  CaseTimeline,
   ClaimAnalysis,
   ClaimDetail,
   ClaimSummary,
@@ -80,6 +83,19 @@ export async function fetchClaimDetail(claimId: string): Promise<ClaimDetail> {
 
 export async function fetchClaimAnalysis(claimId: string): Promise<ClaimAnalysis> {
   const response = await api.get<ClaimAnalysis>(`/claims/${claimId}/analysis`)
+  return response.data
+}
+
+export async function fetchCaseTimeline(claimId: string): Promise<CaseTimeline> {
+  const response = await api.get<CaseTimeline>(`/claims/${claimId}/case-timeline`)
+  return response.data
+}
+
+export async function updateCaseManagement(
+  claimId: string,
+  payload: CaseManagementPayload
+): Promise<CaseManagement> {
+  const response = await api.put<CaseManagement>(`/claims/${claimId}/case-management`, payload)
   return response.data
 }
 

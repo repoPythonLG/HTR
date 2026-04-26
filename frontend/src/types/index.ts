@@ -36,6 +36,13 @@ export type ClaimSummary = {
   source_type: string
   suspicious_flag: boolean
   incorrect_flag: boolean
+  case_owner_id?: string | null
+  case_priority: CasePriority
+  case_sla_due_at?: string | null
+  case_opened_at?: string | null
+  case_closed_at?: string | null
+  case_watchlist: boolean
+  case_next_action?: string | null
   risk_level?: string | null
   risk_score?: number | null
   primary_red_flag?: string | null
@@ -98,6 +105,40 @@ export type ReviewerDecision = {
   timestamp: string
 }
 
+export type CasePriority = 'standard' | 'priority' | 'urgent' | 'executive'
+
+export type CaseManagementPayload = {
+  case_owner_id?: string | null
+  case_priority: CasePriority
+  case_sla_due_at?: string | null
+  case_tags: string[]
+  case_watchlist: boolean
+  case_next_action?: string | null
+}
+
+export type CaseManagement = CaseManagementPayload & {
+  claim_id: string
+  status: string
+  case_opened_at?: string | null
+  case_closed_at?: string | null
+}
+
+export type CaseTimelineEvent = {
+  event_id: string
+  event_type: string
+  title: string
+  description: string
+  timestamp: string
+  actor?: string | null
+  severity?: string | null
+  metadata: Record<string, unknown>
+}
+
+export type CaseTimeline = {
+  claim_id: string
+  events: CaseTimelineEvent[]
+}
+
 export type ClaimDetail = {
   claim_id: string
   employee_id: string
@@ -127,6 +168,14 @@ export type ClaimDetail = {
   suspicious_flag: boolean
   incorrect_flag: boolean
   risk_score_cached: number
+  case_owner_id?: string | null
+  case_priority: CasePriority
+  case_sla_due_at?: string | null
+  case_opened_at?: string | null
+  case_closed_at?: string | null
+  case_tags: string[]
+  case_watchlist: boolean
+  case_next_action?: string | null
   created_at: string
   updated_at: string
   documents: DocumentRecord[]

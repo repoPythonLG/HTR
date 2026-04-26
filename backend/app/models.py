@@ -58,6 +58,15 @@ class Claim(Base):
     currency: Mapped[str] = mapped_column(String(8), default="SAR")
     status: Mapped[str] = mapped_column(String(32), default="uploaded")
 
+    case_owner_id: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
+    case_priority: Mapped[str] = mapped_column(String(32), default="standard")
+    case_sla_due_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    case_opened_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    case_closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    case_tags: Mapped[List[str]] = mapped_column(JSON, default=list)
+    case_watchlist: Mapped[bool] = mapped_column(Boolean, default=False)
+    case_next_action: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     source_type: Mapped[str] = mapped_column(String(32), default="document_upload")
     source_reference: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     submitted_by_user_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.user_id"), nullable=True)
@@ -77,6 +86,7 @@ class Claim(Base):
         cascade="all, delete-orphan",
     )
     reviewer_decisions: Mapped[List[ReviewerDecision]] = relationship(back_populates="claim", cascade="all, delete-orphan")
+    case_audit_events: Mapped[List[CaseAuditEvent]] = relationship(back_populates="claim", cascade="all, delete-orphan")
     submitted_by: Mapped[Optional[User]] = relationship(back_populates="submitted_claims")
 
 
@@ -174,3 +184,19 @@ class ReviewerDecision(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     claim: Mapped[Claim] = relationship(back_populates="reviewer_decisions")
+
+
+class CaseAuditEvent(Base):
+    __tablename__ = "case_audit_events"
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    claim_id: Mapped[str] = mapped_column(ForeignKey("claims.claim_id"), index=True)
+    event_type: Mapped[str] = mapped_column(String(80), index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str] = mapped_column(Text)
+    actor_id: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
+    severity: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    event_metadata: Mapped[Dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    claim: Mapped[Claim] = relationship(back_populates="case_audit_events")

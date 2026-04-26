@@ -15,6 +15,14 @@ function riskChipClass(level?: string | null) {
   return 'chip low'
 }
 
+function priorityChipClass(priority?: string | null) {
+  const value = (priority || 'standard').toLowerCase()
+  if (value === 'executive') return 'chip critical'
+  if (value === 'urgent') return 'chip high'
+  if (value === 'priority') return 'chip medium'
+  return 'chip low'
+}
+
 export function ClaimsWorkbenchPage() {
   const navigate = useNavigate()
 
@@ -178,6 +186,7 @@ export function ClaimsWorkbenchPage() {
                 <th>Trip Profile</th>
                 <th>Amount</th>
                 <th>Risk</th>
+                <th>Case</th>
                 <th>Flags</th>
                 <th>Created</th>
                 <th>Actions</th>
@@ -186,7 +195,7 @@ export function ClaimsWorkbenchPage() {
             <tbody>
               {filteredClaims.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="empty-table">
+                  <td colSpan={10} className="empty-table">
                     No claims match your filters. Use the Data Intake window to upload a new spreadsheet.
                   </td>
                 </tr>
@@ -219,6 +228,12 @@ export function ClaimsWorkbenchPage() {
                   <td>
                     <span className={riskChipClass(claim.risk_level)}>{claim.risk_level || 'Unscored'}</span>
                     <p>{(claim.risk_score || 0).toFixed(1)} pts</p>
+                  </td>
+                  <td>
+                    <span className={priorityChipClass(claim.case_priority)}>{claim.case_priority || 'standard'}</span>
+                    <p>{claim.case_owner_id || 'Unassigned'}</p>
+                    <p>{claim.case_sla_due_at ? `SLA ${dayjs(claim.case_sla_due_at).format('DD MMM HH:mm')}` : 'No SLA'}</p>
+                    {claim.case_watchlist && <p>Watchlist</p>}
                   </td>
                   <td>
                     <p>Detections: {claim.detection_count}</p>
