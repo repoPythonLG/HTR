@@ -322,6 +322,57 @@ export type RiskSettings = {
   location_adjusted_threshold_pct: number
 }
 
+export type ModelGovernanceMethod = {
+  key: string
+  name: string
+  status: string
+  purpose: string
+  how_it_works: string
+  reviewer_interpretation: string
+  limitations: string[]
+  primary_inputs: string[]
+  thresholds: string[]
+}
+
+export type ModelGovernanceThreshold = {
+  key: string
+  name: string
+  category: string
+  value?: number | null
+  unit?: string | null
+  weight?: number | null
+  enabled: boolean
+  source: string
+}
+
+export type ModelGovernanceVersion = {
+  model_version: string
+  assessments: number
+  first_used_at?: string | null
+  last_used_at?: string | null
+  average_risk_score: number
+}
+
+export type ModelGovernanceControl = {
+  name: string
+  status: string
+  owner: string
+  evidence: string
+}
+
+export type ModelGovernance = {
+  current_model_version: string
+  detection_mode: RiskSettings['detection_mode']
+  generated_assessments: number
+  latest_assessment_at?: string | null
+  policy_rule_count: number
+  enabled_policy_rule_count: number
+  methods: ModelGovernanceMethod[]
+  thresholds: ModelGovernanceThreshold[]
+  version_history: ModelGovernanceVersion[]
+  controls: ModelGovernanceControl[]
+}
+
 export type OutlierMetricOption = {
   key: string
   label: string

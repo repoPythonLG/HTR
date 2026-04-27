@@ -14,6 +14,7 @@ import {
   ExcelImportResult,
   ExecutiveDashboard,
   ActiveImport,
+  ModelGovernance,
   PolicyRule,
   RiskSettings,
   SpreadsheetPreview
@@ -288,6 +289,11 @@ export async function fetchUsers(): Promise<CurrentUser[]> {
 
 export async function fetchRiskSettings(): Promise<RiskSettings> {
   const response = await api.get<RiskSettings>('/admin/risk-settings')
+  return response.data
+}
+
+export async function fetchModelGovernance(): Promise<ModelGovernance> {
+  const response = await api.get<ModelGovernance>('/governance/model')
   return response.data
 }
 

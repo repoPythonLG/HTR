@@ -31,6 +31,7 @@ from app.schemas import (
     ExcelImportResponse,
     ExecutiveDashboardOut,
     ActiveImportOut,
+    ModelGovernanceOut,
     OutlierClusterSummaryOut,
     OutlierMapDashboardOut,
     OutlierMapPointOut,
@@ -1762,6 +1763,194 @@ def risk_summary_compat(
     current_user: User = Depends(require_roles("reviewer", "administrator")),
 ):
     return executive_dashboard(db=db, current_user=current_user)
+
+
+def _method_status(mode: str, method_key: str) -> str:
+    if mode == "combined":
+        return "Active"
+    if mode == "outlier" and method_key in {"amount_outlier", "duration_outlier", "location_adjusted"}:
+        return "Active"
+    if mode == "mean_threshold" and method_key in {"mean_threshold", "location_adjusted"}:
+        return "Active"
+    return "Available"
+
+
+@router.get("/governance/model", response_model=ModelGovernanceOut)
+def model_governance(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("reviewer", "administrator")),
+):
+    risk_settings = _current_risk_settings(db)
+    policy_rules = db.execute(select(PolicyRule).order_by(PolicyRule.category, PolicyRule.key)).scalars().all()
+    enabled_rules = [rule for rule in policy_rules if rule.enabled]
+
+    version_rows = db.execute(
+        select(
+            RiskAssessment.model_version,
+            func.count(),
+            func.min(RiskAssessment.generated_at),
+            func.max(RiskAssessment.generated_at),
+            func.avg(RiskAssessment.risk_score),
+        )
+        .group_by(RiskAssessment.model_version)
+        .order_by(func.max(RiskAssessment.generated_at).desc())
+    ).all()
+
+    generated_assessments = sum(int(row[1]) for row in version_rows)
+    latest_assessment_at = version_rows[0][3] if version_rows else None
+
+    methods = [
+        {
+            "key": "amount_outlier",
+            "name": "Amount Outlier and Abnormality Detection",
+            "status": _method_status(risk_settings.detection_mode, "amount_outlier"),
+            "purpose": "Find claims whose value is statistically unusual compared with similar trips.",
+            "how_it_works": (
+                "The engine compares each claim against peers with matching expense type, trip boundary, "
+                "and activity. It calculates mean, median, standard deviation, IQR upper bound, z-score, "
+                "and robust z-score before raising an abnormality finding."
+            ),
+            "reviewer_interpretation": (
+                "A high score means the claim sits far outside the peer pattern. It is not an automatic rejection; "
+                "the reviewer should validate itinerary, hotel invoice, and business justification."
+            ),
+            "limitations": [
+                "Small peer groups reduce statistical confidence.",
+                "Legitimate executive travel, late booking, or event pricing can create valid outliers.",
+                "Historical peer data must reflect current destination cost conditions.",
+            ],
+            "primary_inputs": ["Claim amount", "Expense type", "Trip boundary", "Trip activity", "Peer sample"],
+            "thresholds": ["outlier_min_sample_size", "risk_critical_min"],
+        },
+        {
+            "key": "mean_threshold",
+            "name": "Peer Mean Threshold Detection",
+            "status": _method_status(risk_settings.detection_mode, "mean_threshold"),
+            "purpose": "Highlight claims that exceed the peer mean by a configured percentage.",
+            "how_it_works": (
+                "The method calculates the peer mean and compares the claim amount against mean * "
+                "(1 + configured threshold percentage)."
+            ),
+            "reviewer_interpretation": (
+                "This is a transparent business-rule signal. It is easier to explain to managers and works well "
+                "as a secondary control alongside statistical outlier detection."
+            ),
+            "limitations": [
+                "Mean values can be distorted by already abnormal claims.",
+                "The method does not understand one-off business context by itself.",
+                "A single percentage may be too blunt for every destination and trip type.",
+            ],
+            "primary_inputs": ["Claim amount", "Peer mean", "Configured threshold", "Peer group"],
+            "thresholds": ["mean_threshold_pct", "location_adjusted_threshold_pct"],
+        },
+        {
+            "key": "location_adjusted",
+            "name": "Destination Cost Adjustment",
+            "status": _method_status(risk_settings.detection_mode, "location_adjusted"),
+            "purpose": "Normalise spend by country and city so expensive destinations are assessed fairly.",
+            "how_it_works": (
+                "The engine applies city hotel benchmarks or country cost factors to create a location-adjusted "
+                "claim amount before comparing behaviour across destinations."
+            ),
+            "reviewer_interpretation": (
+                "A location-adjusted anomaly means the claim is unusual even after allowing for the destination's "
+                "expected cost level."
+            ),
+            "limitations": [
+                "Benchmarks must be maintained as hotel markets change.",
+                "Unknown cities fall back to country or trip-boundary defaults.",
+                "Major events and seasonal pricing may still need manual context.",
+            ],
+            "primary_inputs": ["Destination city", "Destination country", "Trip boundary", "Claim amount"],
+            "thresholds": ["location_adjusted_threshold_pct", "hotel_deviation_pct"],
+        },
+        {
+            "key": "risk_scoring",
+            "name": "Weighted Risk Score and Risk Bands",
+            "status": "Active",
+            "purpose": "Convert multiple findings into a single reviewer-prioritisation score.",
+            "how_it_works": (
+                "Each detection contributes a configured weight. The resulting score is capped and mapped into "
+                "Low, Medium, High, or Critical bands for queue prioritisation."
+            ),
+            "reviewer_interpretation": (
+                "Risk score controls workflow priority, not guilt. Disposition remains a human decision supported "
+                "by evidence cards and the audit timeline."
+            ),
+            "limitations": [
+                "Weights encode governance policy and must be reviewed periodically.",
+                "More detections can increase priority even when individual signals are moderate.",
+                "Human review is required before adverse action.",
+            ],
+            "primary_inputs": ["Detection weights", "Severity", "Policy thresholds", "Reviewer disposition history"],
+            "thresholds": ["risk_critical_min", "weight_amount_outlier_abnormality", "weight_location_cost_anomaly"],
+        },
+    ]
+
+    thresholds = [
+        {
+            "key": rule.key,
+            "name": rule.name,
+            "category": rule.category,
+            "value": rule.threshold,
+            "unit": rule.unit,
+            "weight": rule.weight,
+            "enabled": rule.enabled,
+            "source": rule.source,
+        }
+        for rule in policy_rules
+    ]
+
+    version_history = [
+        {
+            "model_version": row[0],
+            "assessments": int(row[1]),
+            "first_used_at": row[2],
+            "last_used_at": row[3],
+            "average_risk_score": round(float(row[4] or 0.0), 2),
+        }
+        for row in version_rows
+    ]
+
+    controls = [
+        {
+            "name": "Human-in-the-loop disposition",
+            "status": "Enforced",
+            "owner": "HR Compliance",
+            "evidence": "Claims remain in active review until a reviewer records a disposition and notes.",
+        },
+        {
+            "name": "Explainability evidence",
+            "status": "Available",
+            "owner": "Compliance Analytics",
+            "evidence": "Every finding exposes readable evidence cards plus raw supporting facts for audit.",
+        },
+        {
+            "name": "Threshold governance",
+            "status": "Configurable",
+            "owner": "Platform Administrator",
+            "evidence": "Policy thresholds and weights are stored as policy rules and visible in this register.",
+        },
+        {
+            "name": "Version traceability",
+            "status": "Tracked",
+            "owner": "AI Governance",
+            "evidence": "Each risk assessment stores the model/rules version used at generation time.",
+        },
+    ]
+
+    return ModelGovernanceOut(
+        current_model_version=settings.model_version,
+        detection_mode=risk_settings.detection_mode,
+        generated_assessments=generated_assessments,
+        latest_assessment_at=latest_assessment_at,
+        policy_rule_count=len(policy_rules),
+        enabled_policy_rule_count=len(enabled_rules),
+        methods=methods,
+        thresholds=thresholds,
+        version_history=version_history,
+        controls=controls,
+    )
 
 
 def _get_or_create_policy_rule(

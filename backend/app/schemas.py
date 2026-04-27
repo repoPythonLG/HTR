@@ -286,6 +286,57 @@ class RiskSettingsOut(BaseModel):
     location_adjusted_threshold_pct: float
 
 
+class ModelGovernanceMethodOut(BaseModel):
+    key: str
+    name: str
+    status: str
+    purpose: str
+    how_it_works: str
+    reviewer_interpretation: str
+    limitations: List[str]
+    primary_inputs: List[str]
+    thresholds: List[str]
+
+
+class ModelGovernanceThresholdOut(BaseModel):
+    key: str
+    name: str
+    category: str
+    value: Optional[float]
+    unit: Optional[str]
+    weight: Optional[float]
+    enabled: bool
+    source: str
+
+
+class ModelGovernanceVersionOut(BaseModel):
+    model_version: str
+    assessments: int
+    first_used_at: Optional[datetime]
+    last_used_at: Optional[datetime]
+    average_risk_score: float
+
+
+class ModelGovernanceControlOut(BaseModel):
+    name: str
+    status: str
+    owner: str
+    evidence: str
+
+
+class ModelGovernanceOut(BaseModel):
+    current_model_version: str
+    detection_mode: str
+    generated_assessments: int
+    latest_assessment_at: Optional[datetime]
+    policy_rule_count: int
+    enabled_policy_rule_count: int
+    methods: List[ModelGovernanceMethodOut]
+    thresholds: List[ModelGovernanceThresholdOut]
+    version_history: List[ModelGovernanceVersionOut]
+    controls: List[ModelGovernanceControlOut]
+
+
 class ExtractedPolicySuggestion(BaseModel):
     key: str
     value: float

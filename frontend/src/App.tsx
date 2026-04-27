@@ -10,6 +10,7 @@ import { EmployeeRiskInsightsPage } from './pages/EmployeeRiskInsightsPage'
 import { EmployeeViewPage } from './pages/EmployeeViewPage'
 import { ExecutiveDashboardPage } from './pages/ExecutiveDashboardPage'
 import { LoginPage } from './pages/LoginPage'
+import { ModelGovernancePage } from './pages/ModelGovernancePage'
 import { OutlierAnalyticsPage } from './pages/OutlierAnalyticsPage'
 import { ProcessedClaimsHistoryPage } from './pages/ProcessedClaimsHistoryPage'
 import { SpreadsheetViewerPage } from './pages/SpreadsheetViewerPage'
@@ -39,6 +40,7 @@ export default function App() {
             <Route path="employee-insights" element={<EmployeeRiskInsightsPage />} />
             <Route path="outliers" element={<OutlierAnalyticsPage />} />
             <Route path="history" element={<ProcessedClaimsHistoryPage />} />
+            <Route path="governance" element={<ModelGovernancePage />} />
           </Route>
 
           <Route element={<ProtectedRoute allowedRoles={['employee']} />}>

@@ -1,7 +1,7 @@
 import dayjs from 'dayjs'
 import { ReactNode } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { AdminIcon, ClaimsIcon, DashboardIcon, DocumentIcon, EmployeeIcon, OutlierIcon, SabicIcon, UploadIcon, UsersIcon } from '../components/BrandIcons'
+import { AdminIcon, ClaimsIcon, DashboardIcon, DocumentIcon, EmployeeIcon, OutlierIcon, PolicyIcon, SabicIcon, UploadIcon, UsersIcon } from '../components/BrandIcons'
 import { useAuth } from '../context/AuthContext'
 
 function NavItem({ to, label, icon }: { to: string; label: string; icon: ReactNode }) {
@@ -26,7 +26,7 @@ export function AppLayout() {
       <aside className="sidebar">
         <div className="brand brand-row">
           <div className="brand-logo-strip">
-            <SabicIcon size={132} className="sabic-wordmark" />
+            <SabicIcon size={98} className="sabic-wordmark" />
           </div>
           <div>
             <p>SABIC Enterprise</p>
@@ -53,6 +53,9 @@ export function AppLayout() {
           {(user?.role === 'reviewer' || user?.role === 'administrator') && (
             <NavItem to="/history" label="Processed History" icon={<DocumentIcon />} />
           )}
+          {(user?.role === 'reviewer' || user?.role === 'administrator') && (
+            <NavItem to="/governance" label="Model Governance" icon={<PolicyIcon />} />
+          )}
           {user?.role === 'employee' && (
             <NavItem to="/employee" label="Employee View" icon={<EmployeeIcon />} />
           )}
@@ -63,20 +66,14 @@ export function AppLayout() {
       </aside>
 
       <div className="main-area">
-        <header className="topbar">
-          <div className="topbar-intro">
-            <p className="eyebrow">Production Compliance Software</p>
-            <h1>AI Receipt-to-Claim Discrepancy Platform</h1>
-            <p>Enterprise control surface for reimbursement governance, audit evidence, and investigation workflows.</p>
+        <header className="topbar compact-topbar">
+          <div className="topbar-session">
+            <span>Signed in as</span>
+            <strong>{user?.full_name}</strong>
+            <span>{user?.username}</span>
+            <span className="role-pill">{user?.role}</span>
           </div>
-          <div className="topbar-user">
-            <div className="topbar-identity">
-              <strong>{user?.full_name}</strong>
-              <p>{user?.username}</p>
-              <span className="role-pill">{user?.role}</span>
-            </div>
-            <button onClick={logoutUser}>Sign out</button>
-          </div>
+          <button onClick={logoutUser}>Sign out</button>
         </header>
 
         <section className="content-area">

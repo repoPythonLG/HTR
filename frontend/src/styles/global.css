@@ -68,7 +68,7 @@
   --shadow: 0 22px 48px rgba(8, 38, 83, 0.12), 0 4px 14px rgba(8, 38, 83, 0.08);
   --shadow-soft: 0 14px 26px rgba(8, 38, 83, 0.1), 0 2px 8px rgba(8, 38, 83, 0.07);
   --radius: 16px;
-  --shell-header-height: 126px;
+  --shell-header-height: 72px;
   --font-body: 'SabicSans', Arial, sans-serif;
   --font-heading: 'SabicHeadline', 'SabicSans', Arial, sans-serif;
 }
@@ -276,7 +276,7 @@ button:disabled {
 
 .brand-logo-strip {
   margin: -1.15rem -1.1rem 0;
-  padding: 0.7rem 1.1rem;
+  padding: 0.42rem 1.1rem;
   min-height: var(--shell-header-height);
   background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
   border-bottom: 1px solid rgba(160, 189, 227, 0.72);
@@ -381,7 +381,7 @@ button:disabled {
 }
 
 .topbar {
-  padding: 1.02rem 1.35rem;
+  padding: 0.58rem 1.2rem;
   min-height: var(--shell-header-height);
   border-bottom: 1px solid rgba(188, 207, 233, 0.85);
   background:
@@ -393,6 +393,10 @@ button:disabled {
   justify-content: space-between;
   gap: 1rem;
   box-shadow: 0 6px 16px rgba(18, 55, 109, 0.07);
+}
+
+.compact-topbar {
+  align-items: center;
 }
 
 .topbar h1 {
@@ -442,9 +446,35 @@ button:disabled {
   white-space: nowrap;
 }
 
+.topbar-session {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  color: var(--text-soft);
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+
+.topbar-session strong {
+  color: var(--text);
+  font-size: 0.92rem;
+}
+
+.topbar-session > span:not(.role-pill) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.compact-topbar > button {
+  padding-inline: 1.05rem;
+  min-height: 2.12rem;
+  white-space: nowrap;
+}
+
 .role-pill {
   display: inline-flex;
-  margin-top: 0.2rem;
+  margin-top: 0;
   border-radius: 999px;
   border: 1px solid rgba(161, 190, 231, 0.72);
   background: rgba(234, 243, 255, 0.95);
@@ -870,6 +900,7 @@ button:disabled {
 .executive-page,
 .intake-page,
 .admin-page,
+.governance-page,
 .employee-page,
 .analysis-page,
 .spreadsheet-page,
@@ -1642,6 +1673,169 @@ button:disabled {
   padding: 0.18rem 0.45rem;
 }
 
+.governance-page {
+  overflow: auto;
+  padding-right: 0.3rem;
+}
+
+.governance-hero {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.governance-hero-actions {
+  justify-items: end;
+}
+
+.governance-kpis .metric-card strong {
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.governance-method-panel {
+  min-height: 520px;
+}
+
+.governance-method-list {
+  display: grid;
+  gap: 0.62rem;
+}
+
+.governance-method-card {
+  text-align: left;
+  display: grid;
+  gap: 0.42rem;
+  border: 1px solid rgba(190, 209, 234, 0.9);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #f8fbff 0%, #f1f7ff 100%);
+  color: var(--text);
+  box-shadow: 0 9px 16px rgba(13, 48, 99, 0.08);
+  padding: 0.75rem;
+}
+
+.governance-method-card:hover,
+.governance-method-card.is-active {
+  border-color: rgba(0, 71, 175, 0.5);
+  box-shadow: inset 3px 0 0 var(--brand), 0 12px 20px rgba(13, 48, 99, 0.12);
+  background: linear-gradient(135deg, rgba(0, 71, 175, 0.12), rgba(246, 161, 48, 0.08)), #ffffff;
+  transform: translateY(-1px);
+}
+
+.governance-method-card p {
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  line-height: 1.36;
+}
+
+.governance-method-detail {
+  display: grid;
+  align-content: start;
+  gap: 0.68rem;
+}
+
+.governance-method-detail h3 {
+  margin: 0;
+}
+
+.governance-explainer-card {
+  border: 1px solid rgba(190, 209, 234, 0.88);
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 0.78rem;
+  display: grid;
+  gap: 0.42rem;
+  box-shadow: 0 10px 18px rgba(13, 48, 99, 0.07);
+}
+
+.governance-explainer-card p:not(.eyebrow) {
+  color: var(--text);
+  line-height: 1.47;
+  font-size: 0.88rem;
+}
+
+.governance-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.68rem;
+}
+
+.tag-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.38rem;
+}
+
+.tag-cloud span {
+  border: 1px solid rgba(178, 199, 228, 0.86);
+  border-radius: 999px;
+  background: #f7fbff;
+  color: var(--text-soft);
+  font-size: 0.74rem;
+  padding: 0.2rem 0.48rem;
+}
+
+.governance-limit-list {
+  margin: 0;
+  padding-left: 1.05rem;
+  color: var(--text-soft);
+  display: grid;
+  gap: 0.34rem;
+  font-size: 0.85rem;
+  line-height: 1.38;
+}
+
+.governance-table-head {
+  align-items: end;
+  margin-bottom: 0.72rem;
+}
+
+.governance-table-head p {
+  color: var(--text-soft);
+  margin-top: 0.16rem;
+}
+
+.governance-filter-row {
+  display: grid;
+  grid-template-columns: minmax(210px, 1fr) minmax(150px, 0.7fr);
+  gap: 0.55rem;
+  min-width: min(520px, 100%);
+}
+
+.version-history-list,
+.governance-control-list {
+  display: grid;
+  gap: 0.62rem;
+  margin-top: 0.68rem;
+}
+
+.version-card,
+.control-card {
+  border: 1px solid rgba(190, 209, 234, 0.88);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+  padding: 0.76rem;
+  box-shadow: 0 10px 18px rgba(13, 48, 99, 0.07);
+}
+
+.version-card-head,
+.control-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.55rem;
+}
+
+.control-card {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.control-card p {
+  color: var(--text-soft);
+  font-size: 0.86rem;
+  line-height: 1.42;
+}
+
 .evidence-box {
   border: 1px solid rgba(190, 209, 234, 0.86);
   background: linear-gradient(180deg, #f8fbff 0%, #f2f7ff 100%);
@@ -1976,6 +2170,17 @@ pre {
   .topbar {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .compact-topbar {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .topbar-session {
+    width: 100%;
+    flex-wrap: wrap;
+    white-space: normal;
   }
 
   .topbar-user {
