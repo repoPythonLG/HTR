@@ -29,7 +29,7 @@ export function SpreadsheetViewerPage() {
             label: 'Overview',
             eyebrow: 'Spreadsheet',
             children: (
-              <CollapsiblePanel className="panel app-grow">
+              <CollapsiblePanel className="panel">
                 <h2>Spreadsheet Viewer</h2>
                 <p>{preview.file_name} · Rows shown: {preview.total_rows}</p>
               </CollapsiblePanel>

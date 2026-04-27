@@ -819,6 +819,8 @@ button:disabled {
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+  grid-auto-rows: minmax(4.7rem, auto);
+  align-content: start;
   gap: 0.74rem;
 }
 
@@ -832,7 +834,9 @@ button:disabled {
   border-radius: 13px;
   padding: 0.76rem;
   display: grid;
+  align-content: start;
   gap: 0.22rem;
+  min-height: 4.7rem;
   position: relative;
   overflow: hidden;
   box-shadow: 0 8px 14px rgba(23, 67, 130, 0.08);

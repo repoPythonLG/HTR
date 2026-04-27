@@ -165,7 +165,7 @@ export function DataIntakePage() {
                   {error && <div className="error-box">{error}</div>}
                 </CollapsiblePanel>
 
-                <CollapsiblePanel className="panel app-grow" title="Current Imported Dataset">
+                <CollapsiblePanel className="panel" title="Current Imported Dataset">
                   {!activeImport && <p className="empty-muted">No spreadsheet imported yet.</p>}
                   {activeImport && (
                     <div className="metric-grid compact intake-import-metrics">

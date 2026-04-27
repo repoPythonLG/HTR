@@ -126,7 +126,7 @@ export function ClaimsWorkbenchPage() {
                   {error && <div className="error-box">{error}</div>}
                 </CollapsiblePanel>
 
-                <CollapsiblePanel className="panel app-grow" title="Queue Summary">
+                <CollapsiblePanel className="panel" title="Queue Summary">
                   <div className="metric-grid compact">
                     <article className="metric-card">
                       <div className="metric-line"><span>Claims in View</span><ClaimsIcon className="metric-icon" /></div>

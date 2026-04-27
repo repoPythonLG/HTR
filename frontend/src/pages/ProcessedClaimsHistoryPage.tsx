@@ -88,7 +88,7 @@ export function ProcessedClaimsHistoryPage() {
                   {error && <div className="error-box">{error}</div>}
                 </CollapsiblePanel>
 
-                <CollapsiblePanel className="panel app-grow" title="History Summary">
+                <CollapsiblePanel className="panel" title="History Summary">
                   <div className="metric-grid compact">
                     <article className="metric-card">
                       <div className="metric-line"><span>Total Processed</span><ClaimsIcon className="metric-icon" /></div>

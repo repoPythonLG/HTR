@@ -353,7 +353,7 @@ export function OutlierAnalyticsPage() {
                   </div>
                 </CollapsiblePanel>
 
-                <CollapsiblePanel className="panel app-grow" title="Outlier Mapping Summary">
+                <CollapsiblePanel className="panel" title="Outlier Mapping Summary">
                   <div className="metric-grid compact">
           <article className="metric-card">
             <div className="metric-line"><span>Points In View</span><AnalyzeIcon className="metric-icon" /></div>

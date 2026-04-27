@@ -61,7 +61,7 @@ export function ExecutiveDashboardPage() {
                     </div>
                   </CollapsiblePanel>
 
-                  <CollapsiblePanel className="panel app-grow" title="Employee Claim Metrics">
+                  <CollapsiblePanel className="panel" title="Employee Claim Metrics">
                     <div className="metric-grid">
                       <article className="metric-card">
                         <div className="metric-line"><span>Total Claims</span><ClaimsIcon className="metric-icon" /></div>

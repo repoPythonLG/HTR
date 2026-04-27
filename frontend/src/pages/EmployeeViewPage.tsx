@@ -26,7 +26,7 @@ export function EmployeeViewPage() {
             label: 'Overview',
             eyebrow: 'Employee',
             children: (
-              <CollapsiblePanel className="panel app-grow">
+              <CollapsiblePanel className="panel">
                 <h2 className="section-title"><EmployeeIcon size={18} />Employee Claim Visibility</h2>
                 <div className="metric-grid">
                   <article className="metric-card">
