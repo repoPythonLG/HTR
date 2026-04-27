@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { fetchModelGovernance } from '../api/client'
 import { AnalyzeIcon, PolicyIcon, RiskIcon } from '../components/BrandIcons'
 import { CollapsiblePanel } from '../components/CollapsiblePanel'
+import { PageTabs } from '../components/PageTabs'
 import { useAuth } from '../context/AuthContext'
 import { ModelGovernance, ModelGovernanceMethod } from '../types'
 
@@ -93,6 +94,14 @@ export function ModelGovernancePage() {
 
   return (
     <div className="app-page governance-page">
+      <PageTabs
+        tabs={[
+          {
+            id: 'overview',
+            label: 'Overview',
+            eyebrow: 'Governance',
+            children: (
+              <>
       <CollapsiblePanel className="panel hero-panel governance-hero" title="Model Governance Overview">
         <div>
           <p className="eyebrow">Model Governance and Explainability</p>
@@ -129,6 +138,14 @@ export function ModelGovernancePage() {
         </div>
       </CollapsiblePanel>
 
+              </>
+            )
+          },
+          {
+            id: 'methods',
+            label: 'Detection Methods',
+            eyebrow: 'Explain',
+            children: (
       <CollapsiblePanel className="panel two-col app-grow governance-method-panel" title="Detection Method Explainability" allowFocusView>
         <article className="panel-scroll">
           <div className="section-title-row">
@@ -183,6 +200,13 @@ export function ModelGovernancePage() {
         </article>
       </CollapsiblePanel>
 
+            )
+          },
+          {
+            id: 'thresholds',
+            label: 'Thresholds',
+            eyebrow: 'Rules',
+            children: (
       <CollapsiblePanel className="panel table-panel app-grow" title="Threshold and Weight Register" allowFocusView>
         <div className="panel-head governance-table-head">
           <div>
@@ -231,6 +255,13 @@ export function ModelGovernancePage() {
         </div>
       </CollapsiblePanel>
 
+            )
+          },
+          {
+            id: 'versions',
+            label: 'Versions & Controls',
+            eyebrow: 'Audit',
+            children: (
       <CollapsiblePanel className="panel two-col app-grow" title="Version History and Governance Controls" allowFocusView>
         <article className="panel-scroll">
           <h3 className="section-title"><AnalyzeIcon size={16} />Version History</h3>
@@ -269,6 +300,10 @@ export function ModelGovernancePage() {
           </div>
         </article>
       </CollapsiblePanel>
+            )
+          }
+        ]}
+      />
     </div>
   )
 }

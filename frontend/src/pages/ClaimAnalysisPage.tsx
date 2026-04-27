@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { fetchCaseTimeline, fetchClaimAnalysis, fetchClaimDetail, getDocumentUrl, submitReviewAction, updateCaseManagement } from '../api/client'
 import { AnalyzeIcon, ClaimsIcon, DocumentIcon, RiskIcon, UsersIcon, WrongClaimIcon } from '../components/BrandIcons'
 import { CollapsiblePanel } from '../components/CollapsiblePanel'
+import { PageTabs } from '../components/PageTabs'
 import { useAuth } from '../context/AuthContext'
 import { CasePriority, CaseTimeline, CaseTimelineEvent, ClaimAnalysis, ClaimDetail } from '../types'
 import { formatDetectionType } from '../utils/formatters'
@@ -263,6 +264,14 @@ export function ClaimAnalysisPage() {
 
   return (
     <div className="app-page analysis-page">
+      <PageTabs
+        tabs={[
+          {
+            id: 'overview',
+            label: 'Overview',
+            eyebrow: 'Claim',
+            children: (
+              <>
       <CollapsiblePanel className="panel hero-panel">
         <div>
           <p className="eyebrow">Claim Investigation Workspace</p>
@@ -299,6 +308,14 @@ export function ClaimAnalysisPage() {
         </div>
       </CollapsiblePanel>
 
+              </>
+            )
+          },
+          {
+            id: 'case-file',
+            label: 'Case File',
+            eyebrow: 'Audit',
+            children: (
       <CollapsiblePanel className="panel two-col app-grow case-management-panel" title="Case Management and Audit Timeline" allowFocusView>
         <article className="panel-scroll case-workspace">
           <div className="section-title-row">
@@ -443,6 +460,13 @@ export function ClaimAnalysisPage() {
         </article>
       </CollapsiblePanel>
 
+            )
+          },
+          {
+            id: 'findings',
+            label: 'Findings',
+            eyebrow: 'Risk',
+            children: (
       <CollapsiblePanel className="panel table-panel app-grow" allowFocusView>
         <h3 className="section-title"><AnalyzeIcon size={16} />Findings Matrix</h3>
         <div className="table-wrap table-fill-wrap">
@@ -473,6 +497,13 @@ export function ClaimAnalysisPage() {
         </div>
       </CollapsiblePanel>
 
+            )
+          },
+          {
+            id: 'evidence',
+            label: 'Evidence',
+            eyebrow: 'Facts',
+            children: (
       <CollapsiblePanel className="panel two-col app-grow" allowFocusView>
         <article className="panel-scroll">
           <h3 className="section-title"><AnalyzeIcon size={16} />Evidence and Supporting Facts</h3>
@@ -536,7 +567,13 @@ export function ClaimAnalysisPage() {
         </article>
       </CollapsiblePanel>
 
-      {canReview && (
+            )
+          },
+          ...(canReview ? [{
+            id: 'disposition',
+            label: 'Disposition',
+            eyebrow: 'Review',
+            children: (
         <CollapsiblePanel className="panel">
           <h3 className="section-title"><RiskIcon size={16} />Reviewer Disposition</h3>
           <form className="form-grid" onSubmit={handleSubmitReview}>
@@ -571,7 +608,10 @@ export function ClaimAnalysisPage() {
             </button>
           </form>
         </CollapsiblePanel>
-      )}
+            )
+          }] : [])
+        ]}
+      />
 
       {activeEvidence && (
         <div className="modal-backdrop" role="presentation" onClick={() => setActiveEvidence(null)}>

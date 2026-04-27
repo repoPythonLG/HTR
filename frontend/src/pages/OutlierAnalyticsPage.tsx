@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { fetchOutlierMapDashboard } from '../api/client'
 import { AnalyzeIcon, OutlierIcon, RiskIcon } from '../components/BrandIcons'
 import { CollapsiblePanel } from '../components/CollapsiblePanel'
+import { PageTabs } from '../components/PageTabs'
 import { OutlierMapDashboard, OutlierMapPoint } from '../types'
 
 const CLUSTER_COLORS = ['#2f60b7', '#228750', '#ce7b1f', '#6f52b5', '#0d8895']
@@ -331,21 +332,29 @@ export function OutlierAnalyticsPage() {
 
   return (
     <div className="app-page outlier-page">
-      <CollapsiblePanel className="panel hero-panel" title="Outlier Analytics Overview">
-        <div>
-          <p className="eyebrow">Statistical Outlier Monitor</p>
-          <h2>Outlier Analytics Studio</h2>
-          <p>
-            Visualize 2D claim clusters and isolate anomalies to accelerate suspicious-claim investigations.
-          </p>
-          <p>
-            Use the location-adjusted amount metric to normalize spend by destination city/country cost levels.
-          </p>
-        </div>
-      </CollapsiblePanel>
+      <PageTabs
+        tabs={[
+          {
+            id: 'overview',
+            label: 'Overview',
+            eyebrow: 'Outliers',
+            children: (
+              <>
+                <CollapsiblePanel className="panel hero-panel" title="Outlier Analytics Overview">
+                  <div>
+                    <p className="eyebrow">Statistical Outlier Monitor</p>
+                    <h2>Outlier Analytics Studio</h2>
+                    <p>
+                      Visualize 2D claim clusters and isolate anomalies to accelerate suspicious-claim investigations.
+                    </p>
+                    <p>
+                      Use the location-adjusted amount metric to normalize spend by destination city/country cost levels.
+                    </p>
+                  </div>
+                </CollapsiblePanel>
 
-      <CollapsiblePanel className="panel" title="Outlier Mapping Controls">
-        <div className="metric-grid compact">
+                <CollapsiblePanel className="panel app-grow" title="Outlier Mapping Summary">
+                  <div className="metric-grid compact">
           <article className="metric-card">
             <div className="metric-line"><span>Points In View</span><AnalyzeIcon className="metric-icon" /></div>
             <strong>{filteredPoints.length}</strong>
@@ -363,6 +372,17 @@ export function OutlierAnalyticsPage() {
             <strong>{dashboard.clusters.filter((item) => item.cluster_id >= 0).length}</strong>
           </article>
         </div>
+                </CollapsiblePanel>
+              </>
+            )
+          },
+          {
+            id: 'map',
+            label: 'Cluster Map',
+            eyebrow: '2D',
+            children: (
+              <>
+      <CollapsiblePanel className="panel" title="Outlier Mapping Controls">
 
         <div className="outlier-control-grid">
           <label>
@@ -542,6 +562,14 @@ export function OutlierAnalyticsPage() {
         </div>
       </CollapsiblePanel>
 
+              </>
+            )
+          },
+          {
+            id: 'outliers',
+            label: 'Top Outliers',
+            eyebrow: 'Claims',
+            children: (
       <CollapsiblePanel className="panel table-panel app-grow" title="Top Outlier Claims" allowFocusView>
         <div className="panel-head">
           <div>
@@ -595,6 +623,10 @@ export function OutlierAnalyticsPage() {
           </table>
         </div>
       </CollapsiblePanel>
+            )
+          }
+        ]}
+      />
     </div>
   )
 }

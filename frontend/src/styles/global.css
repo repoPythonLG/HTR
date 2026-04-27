@@ -520,6 +520,85 @@ button:disabled {
   overflow: hidden;
 }
 
+.page-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.82rem;
+  height: 100%;
+  min-height: 0;
+}
+
+.page-tab-list {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid rgba(190, 209, 234, 0.9);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(240, 247, 255, 0.9)),
+    #ffffff;
+  padding: 0.42rem;
+  box-shadow: 0 12px 24px rgba(13, 48, 99, 0.08);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.page-tab-button {
+  display: grid;
+  gap: 0.08rem;
+  align-content: center;
+  min-width: max-content;
+  min-height: 2.72rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-soft);
+  box-shadow: none;
+  text-align: left;
+  transform: none;
+}
+
+.page-tab-button:hover {
+  background: rgba(0, 71, 175, 0.07);
+  color: var(--text);
+  box-shadow: none;
+  transform: none;
+}
+
+.page-tab-button.is-active {
+  border-color: rgba(0, 71, 175, 0.28);
+  background: linear-gradient(135deg, rgba(0, 71, 175, 0.16), rgba(246, 161, 48, 0.12));
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 var(--accent), 0 8px 16px rgba(13, 48, 99, 0.09);
+}
+
+.page-tab-button span {
+  color: var(--text-soft);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.page-tab-button strong {
+  font-size: 0.86rem;
+}
+
+.page-tab-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.05rem;
+}
+
+.page-tab-panel > .panel.app-grow:only-child,
+.page-tab-panel > .claims-workbench-panel:only-child {
+  flex: 1;
+  min-height: 0;
+}
+
 .panel {
   position: relative;
   background: linear-gradient(180deg, #ffffff 0%, #f9fcff 100%);
@@ -2110,6 +2189,11 @@ pre {
   .app-page {
     height: auto;
     min-height: 0;
+  }
+
+  .page-tabs,
+  .page-tab-panel {
+    height: auto;
   }
 
   .app-grow {

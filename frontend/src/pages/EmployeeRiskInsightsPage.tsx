@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { fetchEmployeeRiskDashboard } from '../api/client'
 import { AnalyzeIcon, ClaimsIcon, EmployeeIcon, RiskIcon, UsersIcon, WrongClaimIcon } from '../components/BrandIcons'
 import { CollapsiblePanel } from '../components/CollapsiblePanel'
+import { PageTabs } from '../components/PageTabs'
 import { EmployeeRiskDashboard, EmployeeRiskProfile } from '../types'
 import { formatDetectionType } from '../utils/formatters'
 
@@ -231,64 +232,72 @@ export function EmployeeRiskInsightsPage() {
 
   return (
     <div className="app-page employee-risk-page">
-      <CollapsiblePanel className="panel hero-panel employee-risk-hero">
-        <div>
-          <p className="eyebrow">HR Manager Analytics</p>
-          <h2>Employee Risk Intelligence</h2>
-          <p>
-            A command-center view of employee-level violations, spend outliers, and risk concentration trends
-            to prioritize investigations faster.
-          </p>
-        </div>
+      <PageTabs
+        tabs={[
+          {
+            id: 'overview',
+            label: 'Overview',
+            eyebrow: 'HR Risk',
+            children: (
+              <>
+                <CollapsiblePanel className="panel hero-panel employee-risk-hero">
+                  <div>
+                    <p className="eyebrow">HR Manager Analytics</p>
+                    <h2>Employee Risk Intelligence</h2>
+                    <p>
+                      A command-center view of employee-level violations, spend outliers, and risk concentration trends
+                      to prioritize investigations faster.
+                    </p>
+                  </div>
 
-        <div className="employee-risk-hero-side">
-          <RiskMeter
-            value={portfolioViolationRate}
-            label="Portfolio Violation Rate"
-            detail={`${dashboard.flagged_claims} flagged claims across ${dashboard.total_claims} claims`}
-          />
-          <RiskMeter
-            value={highRiskEmployeeRate}
-            label="High-Risk Employee Ratio"
-            detail={`${dashboard.high_risk_employees} high-risk employees across ${dashboard.total_employees}`}
-          />
-        </div>
-      </CollapsiblePanel>
+                  <div className="employee-risk-hero-side">
+                    <RiskMeter
+                      value={portfolioViolationRate}
+                      label="Portfolio Violation Rate"
+                      detail={`${dashboard.flagged_claims} flagged claims across ${dashboard.total_claims} claims`}
+                    />
+                    <RiskMeter
+                      value={highRiskEmployeeRate}
+                      label="High-Risk Employee Ratio"
+                      detail={`${dashboard.high_risk_employees} high-risk employees across ${dashboard.total_employees}`}
+                    />
+                  </div>
+                </CollapsiblePanel>
 
-      <CollapsiblePanel className="panel employee-risk-spotlight" title="Employee Risk Spotlight">
-        <SpotlightCard
-          title="Highest Risk Employee"
-          subtitle="Composite exposure"
-          profile={spotlightRisk}
-          metricLabel="Risk Index"
-          metricValue={spotlightRisk ? `${spotlightRisk.risk_index}` : '-'}
-          tone={spotlightRisk ? toneForRisk(spotlightRisk.employee_risk_level) : 'low'}
-          detail={spotlightRisk ? `Avg risk score ${spotlightRisk.avg_risk_score} · Max ${spotlightRisk.max_risk_score}` : '-'}
-        />
+                <CollapsiblePanel className="panel employee-risk-spotlight" title="Employee Risk Spotlight">
+                  <SpotlightCard
+                    title="Highest Risk Employee"
+                    subtitle="Composite exposure"
+                    profile={spotlightRisk}
+                    metricLabel="Risk Index"
+                    metricValue={spotlightRisk ? `${spotlightRisk.risk_index}` : '-'}
+                    tone={spotlightRisk ? toneForRisk(spotlightRisk.employee_risk_level) : 'low'}
+                    detail={spotlightRisk ? `Avg risk score ${spotlightRisk.avg_risk_score} · Max ${spotlightRisk.max_risk_score}` : '-'}
+                  />
 
-        <SpotlightCard
-          title="Most Violations"
-          subtitle="Policy breaches"
-          profile={spotlightViolation}
-          metricLabel="Flagged Claims"
-          metricValue={spotlightViolation ? `${spotlightViolation.flagged_claims}` : '-'}
-          tone={spotlightViolation ? toneForRisk(spotlightViolation.employee_risk_level) : 'low'}
-          detail={spotlightViolation ? `Violation rate ${spotlightViolation.violation_rate_pct}% · Top detection ${formatDetectionType(spotlightViolation.top_detection_type)}` : '-'}
-        />
+                  <SpotlightCard
+                    title="Most Violations"
+                    subtitle="Policy breaches"
+                    profile={spotlightViolation}
+                    metricLabel="Flagged Claims"
+                    metricValue={spotlightViolation ? `${spotlightViolation.flagged_claims}` : '-'}
+                    tone={spotlightViolation ? toneForRisk(spotlightViolation.employee_risk_level) : 'low'}
+                    detail={spotlightViolation ? `Violation rate ${spotlightViolation.violation_rate_pct}% · Top detection ${formatDetectionType(spotlightViolation.top_detection_type)}` : '-'}
+                  />
 
-        <SpotlightCard
-          title="Largest Spend Exposure"
-          subtitle="Financial concentration"
-          profile={spotlightSpend}
-          metricLabel="Total Spend (SAR)"
-          metricValue={spotlightSpend ? currencyFormatter.format(spotlightSpend.total_spend) : '-'}
-          tone={spotlightSpend ? toneForRisk(spotlightSpend.employee_risk_level) : 'low'}
-          detail={spotlightSpend ? `Average claim ${currencyFormatter.format(spotlightSpend.avg_claim_amount)} · ${spotlightSpend.total_claims} claims` : '-'}
-        />
-      </CollapsiblePanel>
+                  <SpotlightCard
+                    title="Largest Spend Exposure"
+                    subtitle="Financial concentration"
+                    profile={spotlightSpend}
+                    metricLabel="Total Spend (SAR)"
+                    metricValue={spotlightSpend ? currencyFormatter.format(spotlightSpend.total_spend) : '-'}
+                    tone={spotlightSpend ? toneForRisk(spotlightSpend.employee_risk_level) : 'low'}
+                    detail={spotlightSpend ? `Average claim ${currencyFormatter.format(spotlightSpend.avg_claim_amount)} · ${spotlightSpend.total_claims} claims` : '-'}
+                  />
+                </CollapsiblePanel>
 
-      <CollapsiblePanel className="panel" title="Risk Portfolio KPIs">
-        <div className="metric-grid employee-risk-kpis">
+                <CollapsiblePanel className="panel" title="Risk Portfolio KPIs">
+                  <div className="metric-grid employee-risk-kpis">
           <article className="metric-card">
             <div className="metric-line"><span>Employees Monitored</span><UsersIcon className="metric-icon" /></div>
             <strong>{integerFormatter.format(dashboard.total_employees)}</strong>
@@ -323,7 +332,15 @@ export function EmployeeRiskInsightsPage() {
           </article>
         </div>
       </CollapsiblePanel>
-
+              </>
+            )
+          },
+          {
+            id: 'analytics',
+            label: 'Risk Analytics',
+            eyebrow: 'Leaders',
+            children: (
+              <>
       <CollapsiblePanel className="panel" title="Filter Controls">
         <div className="insights-filter-grid">
           <label>
@@ -424,7 +441,14 @@ export function EmployeeRiskInsightsPage() {
           ))}
         </article>
       </CollapsiblePanel>
-
+              </>
+            )
+          },
+          {
+            id: 'scorecard',
+            label: 'Employee Scorecard',
+            eyebrow: 'Register',
+            children: (
       <CollapsiblePanel className="panel table-panel app-grow" allowFocusView>
         <div className="panel-head">
           <div>
@@ -489,6 +513,10 @@ export function EmployeeRiskInsightsPage() {
           </table>
         </div>
       </CollapsiblePanel>
+            )
+          }
+        ]}
+      />
     </div>
   )
 }
