@@ -52,6 +52,8 @@ export function ClaimsIcon(props: IconProps) {
   )
 }
 
+export const ReceiptsIcon = ClaimsIcon
+
 export function EmployeeIcon(props: IconProps) {
   return (
     <StrokeIcon {...props}>

@@ -4,7 +4,7 @@ import {
   downloadSampleSpreadsheet,
   fetchActiveImport,
   fetchActiveImportPreview,
-  importClaimsFromExcel,
+  importReceiptsFromExcel,
   uploadClaimPack
 } from '../api/client'
 import { AnalyzeIcon, DocumentIcon, UploadIcon } from '../components/BrandIcons'
@@ -24,6 +24,11 @@ export function DataIntakePage() {
 
   const [loading, setLoading] = useState(false)
   const [downloadingSample, setDownloadingSample] = useState(false)
+  const [importProgress, setImportProgress] = useState<{ active: boolean; percent: number; label: string }>({
+    active: false,
+    percent: 0,
+    label: ''
+  })
   const [message, setMessage] = useState<string>()
   const [error, setError] = useState<string>()
 
@@ -34,7 +39,7 @@ export function DataIntakePage() {
     start_date: '',
     end_date: '',
     destination_city: 'Riyadh',
-    claim_total: '',
+    receipt_total: '',
     currency: 'SAR'
   })
   const [files, setFiles] = useState<File[]>([])
@@ -70,10 +75,21 @@ export function DataIntakePage() {
     setError(undefined)
     setMessage(undefined)
     setLoading(true)
+    setImportProgress({ active: true, percent: 5, label: 'Preparing spreadsheet upload...' })
     try {
-      const result = await importClaimsFromExcel(excelFile, autoAnalyze)
+      const result = await importReceiptsFromExcel(excelFile, autoAnalyze, (percent) => {
+        const uploadPercent = Math.max(8, Math.min(85, Math.round(percent * 0.85)))
+        setImportProgress({
+          active: true,
+          percent: uploadPercent,
+          label: percent >= 100
+            ? 'Upload complete. Importing rows and running entry analysis...'
+            : `Uploading spreadsheet... ${percent}%`
+        })
+      })
+      setImportProgress({ active: true, percent: 100, label: 'Import complete. Refreshing entry workspace...' })
       setMessage(
-        `Imported ${result.imported_claims} claims. Analyzed ${result.analyzed_claims}. Skipped ${result.skipped_rows}.`
+        `Imported ${result.imported_receipts} travel expense entries. Analyzed ${result.analyzed_receipts}. Skipped ${result.skipped_rows}.`
       )
       setExcelFile(null)
       await loadActiveImport()
@@ -81,12 +97,13 @@ export function DataIntakePage() {
       setError(String(err))
     } finally {
       setLoading(false)
+      window.setTimeout(() => setImportProgress({ active: false, percent: 0, label: '' }), 650)
     }
   }
 
   async function handleManualSubmit(event: FormEvent) {
     event.preventDefault()
-    if (!form.employee_id || !form.employee_name || !form.claim_total || files.length === 0) {
+    if (!form.employee_id || !form.employee_name || !form.receipt_total || files.length === 0) {
       setError('Employee, total amount, and at least one document are required.')
       return
     }
@@ -99,14 +116,14 @@ export function DataIntakePage() {
         ...form,
         files
       })
-      setMessage(`Manual claim ${result.claim_id} uploaded successfully.`)
+      setMessage(`Manual travel expense entry ${result.receipt_id} uploaded successfully.`)
       setFiles([])
       setForm((prev) => ({
         ...prev,
         employee_name: '',
         start_date: '',
         end_date: '',
-        claim_total: ''
+        receipt_total: ''
       }))
     } catch (err) {
       setError(String(err))
@@ -123,7 +140,7 @@ export function DataIntakePage() {
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
-      anchor.download = 'sabic_claims_example_1000.xlsx'
+      anchor.download = 'sabic_travel_expense_entries_example_1000.xlsx'
       document.body.appendChild(anchor)
       anchor.click()
       anchor.remove()
@@ -142,6 +159,7 @@ export function DataIntakePage() {
   return (
     <div className="app-page intake-page">
       <PageTabs
+        defaultTabId="upload"
         tabs={[
           {
             id: 'overview',
@@ -153,7 +171,7 @@ export function DataIntakePage() {
                   <div className="panel-head">
                     <div>
                       <h2 className="section-title"><UploadIcon size={18} />Data Intake Window</h2>
-                      <p>Bulk import and manual claim submission have been moved here from the workbench.</p>
+                      <p>Bulk import and manual travel expense entry submission have been moved here from the workbench.</p>
                     </div>
                     <button onClick={handleDownloadSample} disabled={downloadingSample}>
                       <span className="btn-inline"><DocumentIcon size={14} />{downloadingSample ? 'Preparing...' : 'Download 1000-Row Example'}</span>
@@ -193,7 +211,7 @@ export function DataIntakePage() {
           },
           {
             id: 'upload',
-            label: 'Upload Claims',
+            label: 'Upload Entries',
             eyebrow: 'Input',
             children: (
               <CollapsiblePanel className="panel two-col app-grow panel-scroll">
@@ -212,12 +230,23 @@ export function DataIntakePage() {
                         Analyze rows immediately after import
                       </label>
                       <button type="submit" disabled={!excelFile}><span className="btn-inline"><UploadIcon size={14} />Import Spreadsheet</span></button>
+                      {importProgress.active && (
+                        <div className="import-progress-card" aria-live="polite">
+                          <div className="import-progress-head">
+                            <span>{importProgress.label}</span>
+                            <strong>{importProgress.percent}%</strong>
+                          </div>
+                          <div className="progress-track">
+                            <div className="progress-fill" style={{ width: `${importProgress.percent}%` }} />
+                          </div>
+                        </div>
+                      )}
                     </form>
                   </article>
                 )}
 
                 <article>
-                  <h3 className="section-title"><UploadIcon size={16} />Manual Claim Upload</h3>
+                  <h3 className="section-title"><UploadIcon size={16} />Manual Travel Expense Entry Upload</h3>
                   <form className="form-grid" onSubmit={handleManualSubmit}>
                     <label>
                       Employee ID
@@ -256,8 +285,8 @@ export function DataIntakePage() {
 
                     <div className="split-row">
                       <label>
-                        Claim Total
-                        <input type="number" value={form.claim_total} onChange={(e) => setForm((prev) => ({ ...prev, claim_total: e.target.value }))} />
+                        Travel Expense Amount
+                        <input type="number" value={form.receipt_total} onChange={(e) => setForm((prev) => ({ ...prev, receipt_total: e.target.value }))} />
                       </label>
                       <label>
                         Currency
@@ -270,7 +299,7 @@ export function DataIntakePage() {
                       <input type="file" multiple onChange={(e) => setFiles(Array.from(e.target.files || []))} />
                     </label>
 
-                    <button type="submit"><span className="btn-inline"><UploadIcon size={14} />Upload Claim Package</span></button>
+                    <button type="submit"><span className="btn-inline"><UploadIcon size={14} />Upload Travel Expense Entry</span></button>
                   </form>
                 </article>
               </CollapsiblePanel>

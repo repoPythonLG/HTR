@@ -1,21 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from typing import Callable, Optional
+from typing import Callable
 
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
-from passlib.context import CryptContext
+from fastapi import Depends, Header, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.core.database import get_db
 from app.models import User
-
-pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.api_prefix}/auth/login")
 
 DEFAULT_USERS = [
     {
@@ -23,71 +15,58 @@ DEFAULT_USERS = [
         "full_name": "Platform Administrator",
         "role": "administrator",
         "employee_code": None,
-        "password": "Admin#2026",
     },
     {
         "username": "reviewer@sabic.local",
         "full_name": "Corporate Reviewer",
         "role": "reviewer",
         "employee_code": None,
-        "password": "Reviewer#2026",
     },
     {
         "username": "employee@sabic.local",
         "full_name": "Employee User",
         "role": "employee",
         "employee_code": "EMP-1001",
-        "password": "Employee#2026",
     },
 ]
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+def get_current_user(
+    x_demo_role: str = Header("reviewer", alias="X-Demo-Role"),
+    db: Session = Depends(get_db),
+) -> User:
+    """Open demo access: map the selected UI role to a seeded user.
 
+    The frontend sends a non-secret X-Demo-Role header so role-specific demo
+    workflows still behave consistently without a credential gate.
+    """
 
-def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    role = (x_demo_role or "reviewer").strip().lower()
+    if role not in {"employee", "reviewer", "administrator"}:
+        role = "reviewer"
 
-
-def authenticate_user(db: Session, username: str, password: str) -> Optional[User]:
-    user = db.execute(select(User).where(User.username == username)).scalars().first()
-    if not user:
-        return None
-    if not verify_password(password, user.hashed_password):
-        return None
-    if not user.is_active:
-        return None
-    return user
-
-
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=settings.access_token_expire_minutes))
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
-
-
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
+    user = (
+        db.execute(
+            select(User)
+            .where(User.role == role, User.is_active.is_(True))
+            .order_by(User.username.asc())
+        )
+        .scalars()
+        .first()
     )
-
-    try:
-        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
-        username: Optional[str] = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-
-    user = db.execute(select(User).where(User.username == username)).scalars().first()
     if user is None:
-        raise credentials_exception
-    if not user.is_active:
-        raise HTTPException(status_code=403, detail="User is inactive")
+        seed_default_users(db)
+        user = (
+            db.execute(
+                select(User)
+                .where(User.role == role, User.is_active.is_(True))
+                .order_by(User.username.asc())
+            )
+            .scalars()
+            .first()
+        )
+    if user is None:
+        raise HTTPException(status_code=500, detail="Demo user configuration is missing")
     return user
 
 
@@ -111,7 +90,7 @@ def seed_default_users(db: Session) -> None:
                 full_name=seed["full_name"],
                 role=seed["role"],
                 employee_code=seed["employee_code"],
-                hashed_password=get_password_hash(seed["password"]),
+                hashed_password="open-demo-access",
                 is_active=True,
             )
         )

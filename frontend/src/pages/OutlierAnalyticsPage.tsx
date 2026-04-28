@@ -64,7 +64,7 @@ export function OutlierAnalyticsPage() {
   const navigate = useNavigate()
   const [dashboard, setDashboard] = useState<OutlierMapDashboard>()
   const [error, setError] = useState<string>()
-  const [xMetric, setXMetric] = useState('claim_total')
+  const [xMetric, setXMetric] = useState('receipt_total')
   const [yMetric, setYMetric] = useState('trip_duration_days')
   const [outliersOnly, setOutliersOnly] = useState(false)
   const [clusterFilter, setClusterFilter] = useState('all')
@@ -106,7 +106,7 @@ export function OutlierAnalyticsPage() {
 
   const hoveredPoint = useMemo(() => {
     if (!hoveredClaimId) return undefined
-    return filteredPoints.find((point) => point.claim_id === hoveredClaimId)
+    return filteredPoints.find((point) => point.receipt_id === hoveredClaimId)
   }, [filteredPoints, hoveredClaimId])
 
   const topOutliers = useMemo(() => {
@@ -333,6 +333,7 @@ export function OutlierAnalyticsPage() {
   return (
     <div className="app-page outlier-page">
       <PageTabs
+        defaultTabId="map"
         tabs={[
           {
             id: 'overview',
@@ -345,7 +346,7 @@ export function OutlierAnalyticsPage() {
                     <p className="eyebrow">Statistical Outlier Monitor</p>
                     <h2>Outlier Analytics Studio</h2>
                     <p>
-                      Visualize 2D claim clusters and isolate anomalies to accelerate suspicious-claim investigations.
+                      Visualize 2D travel expense entry clusters and isolate anomalies to accelerate suspicious-entry investigations.
                     </p>
                     <p>
                       Use the location-adjusted amount metric to normalize spend by destination city/country cost levels.
@@ -518,7 +519,7 @@ export function OutlierAnalyticsPage() {
               <g clipPath={`url(#${plotClipId})`}>
                 {filteredPoints.map((point) => (
                   <circle
-                    key={point.claim_id}
+                    key={point.receipt_id}
                     cx={toX(point.x_value)}
                     cy={toY(point.y_value)}
                     r={point.outlier_flag ? 5.8 : 4.4}
@@ -527,19 +528,19 @@ export function OutlierAnalyticsPage() {
                     stroke={point.outlier_flag ? '#7f1321' : '#ffffff'}
                     strokeWidth={point.outlier_flag ? 1.3 : 0.9}
                     onMouseEnter={() => {
-                      if (!isPanning) setHoveredClaimId(point.claim_id)
+                      if (!isPanning) setHoveredClaimId(point.receipt_id)
                     }}
                     onClick={() => {
                       if (panMovedRef.current) {
                         panMovedRef.current = false
                         return
                       }
-                      if (point.claim_id) navigate(`/claims/${point.claim_id}/analysis`)
+                      if (point.receipt_id) navigate(`/receipts/${point.receipt_id}/analysis`)
                     }}
                     style={{ cursor: 'pointer' }}
                   >
                     <title>
-                      {`${point.employee_name} (${point.employee_id}) · Claim ${point.claim_id} · Click to open details`}
+                      {`${point.employee_name} (${point.employee_id}) · Entry ${point.receipt_id} · Click to open details`}
                     </title>
                   </circle>
                 ))}
@@ -549,7 +550,7 @@ export function OutlierAnalyticsPage() {
           {hoveredPoint && (
             <div className="outlier-hover-card outlier-hover-overlay">
               <strong>{hoveredPoint.employee_name} ({hoveredPoint.employee_id})</strong>
-              <p>Claim: {hoveredPoint.claim_id} · Dept: {hoveredPoint.department}</p>
+              <p>Entry: {hoveredPoint.receipt_id} · Dept: {hoveredPoint.department}</p>
               <p>
                 Location: {hoveredPoint.to_city || '-'}, {hoveredPoint.to_country || '-'} · Cost Factor {asFiniteNumber(hoveredPoint.location_cost_factor).toFixed(2)}x
               </p>
@@ -568,13 +569,13 @@ export function OutlierAnalyticsPage() {
           {
             id: 'outliers',
             label: 'Top Outliers',
-            eyebrow: 'Claims',
+            eyebrow: 'Entries',
             children: (
-      <CollapsiblePanel className="panel table-panel app-grow" title="Top Outlier Claims" allowFocusView>
+      <CollapsiblePanel className="panel table-panel app-grow" title="Top Outlier Entries" allowFocusView>
         <div className="panel-head">
           <div>
-            <h3>Top Outlier Claims</h3>
-            <p>Claims with the highest statistical distance in the selected 2D feature space.</p>
+            <h3>Top Outlier Entries</h3>
+            <p>Travel expense entries with the highest statistical distance in the selected 2D feature space.</p>
           </div>
         </div>
 
@@ -582,7 +583,7 @@ export function OutlierAnalyticsPage() {
           <table className="table professional-table">
             <thead>
               <tr>
-                <th>Claim</th>
+                <th>Entry</th>
                 <th>Employee</th>
                 <th>Department</th>
                 <th>Location</th>
@@ -601,8 +602,8 @@ export function OutlierAnalyticsPage() {
                 </tr>
               )}
               {topOutliers.map((point) => (
-                <tr key={point.claim_id} className={point.outlier_flag ? 'row-incorrect' : ''}>
-                  <td>{point.claim_id}</td>
+                <tr key={point.receipt_id} className={point.outlier_flag ? 'row-incorrect' : ''}>
+                  <td>{point.receipt_id}</td>
                   <td>
                     <strong>{point.employee_name}</strong>
                     <p>{point.employee_id}</p>

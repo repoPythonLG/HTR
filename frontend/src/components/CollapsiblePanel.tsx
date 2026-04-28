@@ -6,6 +6,7 @@ type CollapsiblePanelProps = {
   defaultCollapsed?: boolean
   title?: string
   allowFocusView?: boolean
+  collapsible?: boolean
 }
 
 export function CollapsiblePanel({
@@ -13,7 +14,8 @@ export function CollapsiblePanel({
   children,
   defaultCollapsed = false,
   title,
-  allowFocusView = false
+  allowFocusView = false,
+  collapsible = true
 }: CollapsiblePanelProps) {
   const panelRef = useRef<HTMLElement | null>(null)
   const [collapsed, setCollapsed] = useState(defaultCollapsed)
@@ -23,7 +25,7 @@ export function CollapsiblePanel({
   const panelClassName = `${className} collapsible-panel${collapsed ? ' is-collapsed' : ''}${focused ? ' is-focus-view' : ''}`.trim()
 
   function fallbackTitle(): string {
-    if (className.includes('claims-workbench-panel')) return 'Claims Workbench'
+    if (className.includes('claims-workbench-panel')) return 'Travel Expense Entry Workbench'
     if (className.includes('employee-risk-spotlight')) return 'Employee Risk Spotlight'
     if (className.includes('intake-last-import-panel')) return 'Last Imported Spreadsheet'
     if (className.includes('table-panel')) return 'Data Table'
@@ -111,20 +113,22 @@ export function CollapsiblePanel({
           </button>
         )}
 
-        <button
-          type="button"
-          className="panel-icon-btn panel-collapse-btn"
-          onClick={toggleCollapsed}
-          aria-expanded={!collapsed}
-          title={collapsed ? 'Expand panel' : 'Collapse panel'}
-          aria-label={collapsed ? 'Expand panel' : 'Collapse panel'}
-        >
-          <span className={`panel-collapse-icon${collapsed ? ' is-collapsed' : ''}`} aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M6 9l6 6 6-6" />
-            </svg>
-          </span>
-        </button>
+        {collapsible && (
+          <button
+            type="button"
+            className="panel-icon-btn panel-collapse-btn"
+            onClick={toggleCollapsed}
+            aria-expanded={!collapsed}
+            title={collapsed ? 'Expand panel' : 'Collapse panel'}
+            aria-label={collapsed ? 'Expand panel' : 'Collapse panel'}
+          >
+            <span className={`panel-collapse-icon${collapsed ? ' is-collapsed' : ''}`} aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </span>
+          </button>
+        )}
       </div>
       {collapsed && <p className="panel-collapsed-note">{collapsedTitle}</p>}
       {children}

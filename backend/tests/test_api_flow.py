@@ -80,6 +80,18 @@ def test_upload_analyze_and_review_flow(client, auth_headers):
     expected_score = sum(item["weight"] for item in contributions)
     assert claim["risk_assessment"]["risk_score"] == expected_score
 
+    queue_response = client.get(
+        "/api/v1/claims",
+        headers=reviewer_headers,
+        params={"queue": "active", "sort_by": "risk_desc", "limit": 1, "offset": 0},
+    )
+    assert queue_response.status_code == 200, queue_response.text
+    queue_payload = queue_response.json()
+    assert queue_payload["total"] >= 1
+    assert queue_payload["limit"] == 1
+    assert len(queue_payload["items"]) == 1
+    assert queue_payload["items"][0]["risk_score"] >= 0
+
     review_response = client.post(
         f"/api/v1/claims/{claim_id}/review-action",
         headers=reviewer_headers,
@@ -173,6 +185,7 @@ def test_sabic_register_import_and_mean_threshold_mode(client, auth_headers):
             "detection_mode": "mean_threshold",
             "mean_threshold_pct": 10,
             "outlier_min_sample_size": 5,
+            "location_adjusted_threshold_pct": 10,
         },
     )
     assert settings_response.status_code == 200, settings_response.text

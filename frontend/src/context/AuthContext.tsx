@@ -1,56 +1,75 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { fetchCurrentUser, getStoredToken, login, setStoredToken } from '../api/client'
-import { CurrentUser } from '../types'
+import { getStoredDemoRole, setStoredDemoRole } from '../api/client'
+import { CurrentUser, UserRole } from '../types'
 
 type AuthContextType = {
   user?: CurrentUser
   loading: boolean
   isAuthenticated: boolean
-  loginUser: (username: string, password: string) => Promise<void>
+  loginUser: (role: UserRole) => Promise<void>
   logoutUser: () => void
+  selectRole: (role: UserRole) => void
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+const DEMO_USERS: Record<UserRole, CurrentUser> = {
+  administrator: {
+    user_id: 'demo-administrator',
+    username: 'administrator@sabic.local',
+    full_name: 'Platform Administrator',
+    role: 'administrator',
+    employee_code: null,
+    is_active: true
+  },
+  reviewer: {
+    user_id: 'demo-reviewer',
+    username: 'reviewer@sabic.local',
+    full_name: 'Corporate Reviewer',
+    role: 'reviewer',
+    employee_code: null,
+    is_active: true
+  },
+  employee: {
+    user_id: 'demo-employee',
+    username: 'employee@sabic.local',
+    full_name: 'Employee User',
+    role: 'employee',
+    employee_code: 'EMP-1001',
+    is_active: true
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<CurrentUser>()
-  const [loading, setLoading] = useState(true)
+  const [user, setUser] = useState<CurrentUser>(() => DEMO_USERS[getStoredDemoRole()])
+  const [loading] = useState(false)
 
   useEffect(() => {
-    const token = getStoredToken()
-    if (!token) {
-      setLoading(false)
-      return
-    }
+    setStoredDemoRole(user?.role || 'reviewer')
+  }, [user?.role])
 
-    fetchCurrentUser()
-      .then((profile) => setUser(profile))
-      .catch(() => {
-        setStoredToken(null)
-        setUser(undefined)
-      })
-      .finally(() => setLoading(false))
-  }, [])
+  function selectRole(role: UserRole) {
+    setStoredDemoRole(role)
+    setUser(DEMO_USERS[role])
+  }
 
-  async function loginUser(username: string, password: string) {
-    const token = await login(username, password)
-    setStoredToken(token.access_token)
-    const profile = await fetchCurrentUser()
-    setUser(profile)
+  async function loginUser(role: UserRole) {
+    selectRole(role)
   }
 
   function logoutUser() {
-    setStoredToken(null)
-    setUser(undefined)
+    selectRole('reviewer')
+    window.location.assign('/login')
   }
 
   const value = useMemo(
     () => ({
       user,
       loading,
-      isAuthenticated: Boolean(user),
+      isAuthenticated: true,
       loginUser,
-      logoutUser
+      logoutUser,
+      selectRole
     }),
     [user, loading]
   )

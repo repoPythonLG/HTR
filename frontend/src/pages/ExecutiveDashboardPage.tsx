@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { fetchEmployeeDashboard, fetchExecutiveDashboard } from '../api/client'
-import { AnalyzeIcon, ClaimsIcon, RiskIcon, WrongClaimIcon } from '../components/BrandIcons'
+import { AnalyzeIcon, ReceiptsIcon, RiskIcon, WrongClaimIcon } from '../components/BrandIcons'
 import { CollapsiblePanel } from '../components/CollapsiblePanel'
 import { PageTabs } from '../components/PageTabs'
 import { useAuth } from '../context/AuthContext'
@@ -17,6 +17,72 @@ function BarRow({ label, value, total, tone }: { label: string; value: number; t
       </div>
       <div className="bar-track">
         <div className={`bar-fill ${tone}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  )
+}
+
+function DetectionDriversBoard({ drivers }: { drivers: ExecutiveDashboard['top_detection_types'] }) {
+  const totalSignals = drivers.reduce((sum, item) => sum + item.count, 0)
+  const topDriver = drivers[0]
+  const maxDriverCount = Math.max(1, ...drivers.map((item) => item.count))
+  const visibleDrivers = drivers.slice(0, 8)
+
+  if (drivers.length === 0 || !topDriver) {
+    return (
+      <div className="driver-empty-state">
+        <AnalyzeIcon size={24} />
+        <strong>No detection drivers yet</strong>
+        <p>Import entries or run analysis to build the executive detection profile.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="driver-board">
+      <article className="driver-lead-card">
+        <div>
+          <p className="eyebrow">Primary Driver</p>
+          <h3>{formatDetectionType(topDriver.detection_type)}</h3>
+          <p>Largest contributor to current risk escalation volume.</p>
+        </div>
+
+        <div className="driver-signal-ring" aria-label={`${topDriver.count} triggered cases`}>
+          <span>{topDriver.count}</span>
+          <small>cases</small>
+        </div>
+
+        <dl className="driver-lead-metrics">
+          <div>
+            <dt>Total Signals</dt>
+            <dd>{totalSignals}</dd>
+          </div>
+          <div>
+            <dt>Driver Share</dt>
+            <dd>{Math.round((topDriver.count / Math.max(totalSignals, 1)) * 100)}%</dd>
+          </div>
+        </dl>
+      </article>
+
+      <div className="driver-rank-list">
+        {visibleDrivers.map((item, index) => {
+          const pctOfTotal = Math.round((item.count / Math.max(totalSignals, 1)) * 100)
+          const pctOfMax = Math.max(4, Math.round((item.count / maxDriverCount) * 100))
+
+          return (
+            <article className={`driver-rank-card driver-tone-${(index % 5) + 1}`} key={item.detection_type}>
+              <span className="driver-rank-number">{String(index + 1).padStart(2, '0')}</span>
+              <div className="driver-rank-copy">
+                <strong>{formatDetectionType(item.detection_type)}</strong>
+                <p>{pctOfTotal}% of triggered detection volume</p>
+              </div>
+              <strong className="driver-rank-count">{item.count}</strong>
+              <div className="driver-rank-track" aria-hidden="true">
+                <span style={{ width: `${pctOfMax}%` }} />
+              </div>
+            </article>
+          )
+        })}
       </div>
     </div>
   )
@@ -50,34 +116,34 @@ export function ExecutiveDashboardPage() {
             {
               id: 'overview',
               label: 'Overview',
-              eyebrow: 'My Claims',
+              eyebrow: 'My Entries',
               children: (
                 <>
-                  <CollapsiblePanel className="panel hero-panel">
+                  <CollapsiblePanel className="panel hero-panel" collapsible={false}>
                     <div>
                       <p className="eyebrow">Employee Performance</p>
                       <h2>My Reimbursement Portfolio</h2>
-                      <p>Track your submission health and flagged claims in real time.</p>
+                      <p>Track your submission health and flagged entries in real time.</p>
                     </div>
                   </CollapsiblePanel>
 
-                  <CollapsiblePanel className="panel" title="Employee Claim Metrics">
+                  <CollapsiblePanel className="panel" title="Employee Entry Metrics">
                     <div className="metric-grid">
                       <article className="metric-card">
-                        <div className="metric-line"><span>Total Claims</span><ClaimsIcon className="metric-icon" /></div>
-                        <strong>{employee.total_claims}</strong>
+                        <div className="metric-line"><span>Total Entries</span><ReceiptsIcon className="metric-icon" /></div>
+                        <strong>{employee.total_receipts}</strong>
                       </article>
                       <article className="metric-card">
                         <div className="metric-line"><span>Pending</span><RiskIcon className="metric-icon" /></div>
-                        <strong>{employee.pending_claims}</strong>
+                        <strong>{employee.pending_receipts}</strong>
                       </article>
                       <article className="metric-card">
                         <div className="metric-line"><span>Analyzed</span><AnalyzeIcon className="metric-icon" /></div>
-                        <strong>{employee.analyzed_claims}</strong>
+                        <strong>{employee.analyzed_receipts}</strong>
                       </article>
                       <article className="metric-card">
                         <div className="metric-line"><span>Flagged</span><WrongClaimIcon className="metric-icon" /></div>
-                        <strong>{employee.suspicious_claims}</strong>
+                        <strong>{employee.suspicious_receipts}</strong>
                       </article>
                     </div>
                   </CollapsiblePanel>
@@ -94,7 +160,7 @@ export function ExecutiveDashboardPage() {
     return <div className="panel">Loading executive dashboard...</div>
   }
 
-  const qualityIndex = Math.max(0, Math.round(100 - executive.wrong_claim_rate_pct))
+  const qualityIndex = Math.max(0, Math.round(100 - executive.wrong_receipt_rate_pct))
 
   const riskRows = Object.entries(executive.by_risk_level).sort((a, b) => b[1] - a[1])
   const deptRows = Object.entries(executive.by_department).sort((a, b) => b[1] - a[1]).slice(0, 8)
@@ -104,121 +170,77 @@ export function ExecutiveDashboardPage() {
 
   return (
     <div className="app-page executive-page">
-      <PageTabs
-        tabs={[
-          {
-            id: 'overview',
-            label: 'Overview',
-            eyebrow: 'Executive',
-            children: (
-              <>
-                <CollapsiblePanel className="panel hero-panel">
-                  <div>
-                    <p className="eyebrow">Corporate Compliance Center</p>
-                    <h2>Reimbursement Control Dashboard</h2>
-                    <p>Monitor suspicious claim concentration, wrong-claim trends, and portfolio exposure.</p>
-                  </div>
-                  <div className="quality-gauge">
-                    <span>Control Quality Index</span>
-                    <strong>{qualityIndex}</strong>
-                    <p>/ 100</p>
-                  </div>
-                </CollapsiblePanel>
+      <CollapsiblePanel className="panel hero-panel" collapsible={false}>
+        <div>
+          <p className="eyebrow">Corporate Compliance Center</p>
+          <h2>Reimbursement Control Dashboard</h2>
+          <p>Monitor suspicious entry concentration, wrong-entry trends, and portfolio exposure.</p>
+        </div>
+        <div className="quality-gauge">
+          <span>Control Quality Index</span>
+          <strong>{qualityIndex}</strong>
+          <p>/ 100</p>
+        </div>
+      </CollapsiblePanel>
 
-                <CollapsiblePanel className="panel" title="Portfolio Performance Metrics">
-                  <div className="metric-grid">
-                    <article className="metric-card">
-                      <div className="metric-line"><span>Total Claims</span><ClaimsIcon className="metric-icon" /></div>
-                      <strong>{executive.total_claims}</strong>
-                    </article>
-                    <article className="metric-card">
-                      <div className="metric-line"><span>Analyzed Claims</span><AnalyzeIcon className="metric-icon" /></div>
-                      <strong>{executive.analyzed_claims}</strong>
-                    </article>
-                    <article className="metric-card">
-                      <div className="metric-line"><span>Suspicious Claims</span><RiskIcon className="metric-icon" /></div>
-                      <strong>{executive.suspicious_claims}</strong>
-                    </article>
-                    <article className="metric-card">
-                      <div className="metric-line"><span>Wrong Claims</span><WrongClaimIcon className="metric-icon" /></div>
-                      <strong>{executive.wrong_claims}</strong>
-                    </article>
-                    <article className="metric-card">
-                      <div className="metric-line"><span>Suspicious Rate</span><RiskIcon className="metric-icon" /></div>
-                      <strong>{executive.suspicious_rate_pct}%</strong>
-                    </article>
-                    <article className="metric-card">
-                      <div className="metric-line"><span>Wrong-Claim Rate</span><WrongClaimIcon className="metric-icon" /></div>
-                      <strong>{executive.wrong_claim_rate_pct}%</strong>
-                    </article>
-                  </div>
-                </CollapsiblePanel>
-              </>
-            )
-          },
-          {
-            id: 'exposure',
-            label: 'Risk Exposure',
-            eyebrow: 'Distribution',
-            children: (
-              <CollapsiblePanel className="panel two-col app-grow panel-scroll" allowFocusView>
-                <article>
-                  <h3>Risk Band Distribution</h3>
-                  {riskRows.length === 0 && <p className="empty-muted">No analyzed claims yet.</p>}
-                  {riskRows.map(([level, count]) => (
-                    <BarRow key={level} label={level} value={count} total={totalRisk} tone={level.toLowerCase()} />
-                  ))}
-                </article>
+      <CollapsiblePanel className="panel" title="Portfolio Performance Metrics">
+        <div className="metric-grid">
+          <article className="metric-card">
+            <div className="metric-line"><span>Total Entries</span><ReceiptsIcon className="metric-icon" /></div>
+            <strong>{executive.total_receipts}</strong>
+          </article>
+          <article className="metric-card">
+            <div className="metric-line"><span>Analyzed Entries</span><AnalyzeIcon className="metric-icon" /></div>
+            <strong>{executive.analyzed_receipts}</strong>
+          </article>
+          <article className="metric-card">
+            <div className="metric-line"><span>Suspicious Entries</span><RiskIcon className="metric-icon" /></div>
+            <strong>{executive.suspicious_receipts}</strong>
+          </article>
+          <article className="metric-card">
+            <div className="metric-line"><span>Wrong Entries</span><WrongClaimIcon className="metric-icon" /></div>
+            <strong>{executive.wrong_receipts}</strong>
+          </article>
+          <article className="metric-card">
+            <div className="metric-line"><span>Suspicious Rate</span><RiskIcon className="metric-icon" /></div>
+            <strong>{executive.suspicious_rate_pct}%</strong>
+          </article>
+          <article className="metric-card">
+            <div className="metric-line"><span>Wrong-Entry Rate</span><WrongClaimIcon className="metric-icon" /></div>
+            <strong>{executive.wrong_receipt_rate_pct}%</strong>
+          </article>
+        </div>
+      </CollapsiblePanel>
 
-                <article>
-                  <h3>Department Exposure</h3>
-                  {deptRows.length === 0 && <p className="empty-muted">No department data available yet.</p>}
-                  {deptRows.map(([dept, count]) => (
-                    <BarRow key={dept} label={dept} value={count} total={totalDept} tone="brand" />
-                  ))}
-                </article>
-              </CollapsiblePanel>
-            )
-          },
-          {
-            id: 'drivers',
-            label: 'Detection Drivers',
-            eyebrow: 'Audit',
-            children: (
-              <CollapsiblePanel className="panel table-panel app-grow" allowFocusView>
-                <div className="panel-head">
-                  <h3>Top Detection Drivers</h3>
-                  <p>Most common discrepancies currently driving risk score escalation.</p>
-                </div>
+      <CollapsiblePanel className="panel two-col" title="Executive Risk Snapshot">
+        <article>
+          <h3>Risk Band Distribution</h3>
+          {riskRows.length === 0 && <p className="empty-muted">No analyzed entries yet.</p>}
+          {riskRows.map(([level, count]) => (
+            <BarRow key={`overview-risk-${level}`} label={level} value={count} total={totalRisk} tone={level.toLowerCase()} />
+          ))}
+        </article>
 
-                <div className="table-wrap table-fill-wrap">
-                  <table className="table professional-table">
-                    <thead>
-                      <tr>
-                        <th>Detection Type</th>
-                        <th>Triggered Cases</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {executive.top_detection_types.length === 0 && (
-                        <tr>
-                          <td colSpan={2} className="empty-table">No detections yet. Import claims or run analysis.</td>
-                        </tr>
-                      )}
-                      {executive.top_detection_types.map((item) => (
-                        <tr key={item.detection_type}>
-                          <td>{formatDetectionType(item.detection_type)}</td>
-                          <td>{item.count}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </CollapsiblePanel>
-            )
-          }
-        ]}
-      />
+        <article>
+          <h3>Department Exposure</h3>
+          {deptRows.length === 0 && <p className="empty-muted">No department data available yet.</p>}
+          {deptRows.map(([dept, count]) => (
+            <BarRow key={`overview-dept-${dept}`} label={dept} value={count} total={totalDept} tone="brand" />
+          ))}
+        </article>
+      </CollapsiblePanel>
+
+      <CollapsiblePanel className="panel driver-panel" title="Top Detection Drivers" allowFocusView>
+        <div className="panel-head">
+          <div>
+            <h3>Top Detection Drivers</h3>
+            <p>Most common discrepancies currently driving risk score escalation.</p>
+          </div>
+          <span className="source-ref-pill">{executive.top_detection_types.length} active drivers</span>
+        </div>
+
+        <DetectionDriversBoard drivers={executive.top_detection_types} />
+      </CollapsiblePanel>
     </div>
   )
 }

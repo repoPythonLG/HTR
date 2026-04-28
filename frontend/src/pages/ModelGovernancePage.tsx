@@ -107,7 +107,7 @@ export function ModelGovernancePage() {
           <p className="eyebrow">Model Governance and Explainability</p>
           <h2>Detection Methods, Thresholds, and Version Control</h2>
           <p>
-            Audit-ready overview of how ClaimGuard flags suspicious reimbursement claims, which thresholds are active,
+            Audit-ready overview of how Travel Expenses Guard flags suspicious reimbursement travel expense entries, which thresholds are active,
             and which rules version generated historical risk decisions.
           </p>
         </div>

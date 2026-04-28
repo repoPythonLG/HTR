@@ -17,13 +17,6 @@ class UserOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class TokenOut(BaseModel):
-    access_token: str
-    token_type: str
-    username: str
-    role: str
-
-
 class ExtractedFieldOut(BaseModel):
     field_id: str
     name: str
@@ -129,8 +122,12 @@ class ClaimSummaryOut(BaseModel):
     trip_boundary: Optional[str] = None
     expense_type: Optional[str] = None
     to_country: Optional[str] = None
+    to_city: Optional[str] = None
     masked_id: Optional[str] = None
     trip_duration_days: Optional[int] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    trip_settlement_date: Optional[date] = None
     destination_city: Optional[str]
     claim_total: float
     currency: str
@@ -152,6 +149,14 @@ class ClaimSummaryOut(BaseModel):
     detection_count: int = 0
 
     model_config = {"from_attributes": True}
+
+
+class ClaimListOut(BaseModel):
+    items: List[ClaimSummaryOut]
+    total: int
+    limit: int
+    offset: int
+    sort_by: str
 
 
 class ClaimDetailOut(BaseModel):
@@ -315,6 +320,8 @@ class ModelGovernanceVersionOut(BaseModel):
     first_used_at: Optional[datetime]
     last_used_at: Optional[datetime]
     average_risk_score: float
+
+    model_config = {"protected_namespaces": ()}
 
 
 class ModelGovernanceControlOut(BaseModel):

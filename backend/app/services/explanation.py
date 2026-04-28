@@ -15,7 +15,7 @@ SYSTEM_PROMPT = (
 
 def _fallback_reason(detection: dict[str, Any]) -> tuple[str, str]:
     reason = detection["human_readable_reason"]
-    guidance = f"Recommended action: {detection['recommended_action']}. Validate source evidence before disposition."
+    guidance = f"Recommended action: {detection['recommended_action']}. Validate source evidence before decision."
     return reason, guidance
 
 

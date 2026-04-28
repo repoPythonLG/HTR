@@ -26,4 +26,8 @@ export function formatDetectionType(value?: string | null): string {
       return lowered.charAt(0).toUpperCase() + lowered.slice(1)
     })
     .join(' ')
+    .replace(/\bClaims\b/g, 'Travel Expense Entries')
+    .replace(/\bClaim\b/g, 'Travel Expense Entry')
+    .replace(/\bReceipts\b/g, 'Entries')
+    .replace(/\bReceipt\b/g, 'Entry')
 }

@@ -95,7 +95,7 @@ def analyze_claim(db: Session, claim_id: str) -> tuple[Claim, int, float, str]:
         .first()
     )
     if not claim:
-        raise ValueError("Claim not found")
+        raise ValueError("Travel expense entry not found")
 
     for document in claim.documents:
         process_document(db, document)
@@ -113,7 +113,7 @@ def analyze_claim(db: Session, claim_id: str) -> tuple[Claim, int, float, str]:
         .first()
     )
     if not claim:
-        raise ValueError("Claim not found after extraction")
+        raise ValueError("Travel expense entry not found after extraction")
 
     policy_map = get_policy_map(db)
     detection_payloads, risk = evaluate_claim(db, claim, claim.documents, policy_map)

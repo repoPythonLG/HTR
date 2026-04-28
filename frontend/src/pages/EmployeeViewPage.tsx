@@ -1,7 +1,7 @@
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import { fetchEmployeeDashboard } from '../api/client'
-import { AnalyzeIcon, ClaimsIcon, EmployeeIcon, RiskIcon } from '../components/BrandIcons'
+import { AnalyzeIcon, ReceiptsIcon, EmployeeIcon, RiskIcon } from '../components/BrandIcons'
 import { CollapsiblePanel } from '../components/CollapsiblePanel'
 import { PageTabs } from '../components/PageTabs'
 import { EmployeeDashboard } from '../types'
@@ -27,27 +27,27 @@ export function EmployeeViewPage() {
             eyebrow: 'Employee',
             children: (
               <CollapsiblePanel className="panel">
-                <h2 className="section-title"><EmployeeIcon size={18} />Employee Claim Visibility</h2>
+                <h2 className="section-title"><EmployeeIcon size={18} />Employee Entry Visibility</h2>
                 <div className="metric-grid">
                   <article className="metric-card">
                     <div className="metric-line"><span>Employee Code</span><EmployeeIcon className="metric-icon" /></div>
                     <strong>{data.employee_id}</strong>
                   </article>
                   <article className="metric-card">
-                    <div className="metric-line"><span>Total Claims</span><ClaimsIcon className="metric-icon" /></div>
-                    <strong>{data.total_claims}</strong>
+                    <div className="metric-line"><span>Total Entries</span><ReceiptsIcon className="metric-icon" /></div>
+                    <strong>{data.total_receipts}</strong>
                   </article>
                   <article className="metric-card">
                     <div className="metric-line"><span>Pending</span><RiskIcon className="metric-icon" /></div>
-                    <strong>{data.pending_claims}</strong>
+                    <strong>{data.pending_receipts}</strong>
                   </article>
                   <article className="metric-card">
                     <div className="metric-line"><span>Analyzed</span><AnalyzeIcon className="metric-icon" /></div>
-                    <strong>{data.analyzed_claims}</strong>
+                    <strong>{data.analyzed_receipts}</strong>
                   </article>
                   <article className="metric-card">
                     <div className="metric-line"><span>Suspicious</span><RiskIcon className="metric-icon" /></div>
-                    <strong>{data.suspicious_claims}</strong>
+                    <strong>{data.suspicious_receipts}</strong>
                   </article>
                 </div>
               </CollapsiblePanel>
@@ -55,16 +55,16 @@ export function EmployeeViewPage() {
           },
           {
             id: 'recent',
-            label: 'Recent Claims',
-            eyebrow: 'Claims',
+            label: 'Recent Entries',
+            eyebrow: 'Entries',
             children: (
               <CollapsiblePanel className="panel table-panel app-grow" allowFocusView>
-                <h3 className="section-title"><ClaimsIcon size={16} />Recent Claims</h3>
+                <h3 className="section-title"><ReceiptsIcon size={16} />Recent Entries</h3>
                 <div className="table-wrap table-fill-wrap">
                   <table className="table professional-table">
                     <thead>
                       <tr>
-                        <th>Claim</th>
+                        <th>Entry</th>
                         <th>Destination</th>
                         <th>Total</th>
                         <th>Status</th>
@@ -72,13 +72,13 @@ export function EmployeeViewPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {data.recent_claims.map((claim) => (
-                        <tr key={claim.claim_id} className={claim.suspicious_flag ? 'row-suspicious' : ''}>
-                          <td>{claim.claim_id}</td>
-                          <td>{claim.destination_city || '-'}</td>
-                          <td>{claim.claim_total.toFixed(2)} {claim.currency}</td>
-                          <td>{claim.status}</td>
-                          <td>{dayjs(claim.created_at).format('DD MMM YYYY')}</td>
+                      {data.recent_receipts.map((receipt) => (
+                        <tr key={receipt.receipt_id} className={receipt.suspicious_flag ? 'row-suspicious' : ''}>
+                          <td>{receipt.receipt_id}</td>
+                          <td>{receipt.destination_city || '-'}</td>
+                          <td>{receipt.receipt_total.toFixed(2)} {receipt.currency}</td>
+                          <td>{receipt.status}</td>
+                          <td>{dayjs(receipt.created_at).format('DD MMM YYYY')}</td>
                         </tr>
                       ))}
                     </tbody>

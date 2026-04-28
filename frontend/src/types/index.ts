@@ -1,12 +1,5 @@
 export type UserRole = 'employee' | 'reviewer' | 'administrator'
 
-export type AuthToken = {
-  access_token: string
-  token_type: string
-  username: string
-  role: UserRole
-}
-
 export type CurrentUser = {
   user_id: string
   username: string
@@ -18,6 +11,7 @@ export type CurrentUser = {
 
 export type ClaimSummary = {
   claim_id: string
+  receipt_id: string
   employee_id: string
   employee_name: string
   department: string
@@ -26,10 +20,15 @@ export type ClaimSummary = {
   trip_boundary?: string | null
   expense_type?: string | null
   to_country?: string | null
+  to_city?: string | null
   masked_id?: string | null
   trip_duration_days?: number | null
+  start_date?: string | null
+  end_date?: string | null
+  trip_settlement_date?: string | null
   destination_city?: string | null
   claim_total: number
+  receipt_total: number
   currency: string
   status: string
   created_at: string
@@ -47,6 +46,14 @@ export type ClaimSummary = {
   risk_score?: number | null
   primary_red_flag?: string | null
   detection_count: number
+}
+
+export type ClaimListResponse = {
+  items: ClaimSummary[]
+  total: number
+  limit: number
+  offset: number
+  sort_by: string
 }
 
 export type ExtractedField = {
@@ -141,6 +148,7 @@ export type CaseTimeline = {
 
 export type ClaimDetail = {
   claim_id: string
+  receipt_id: string
   employee_id: string
   employee_name: string
   department: string
@@ -161,6 +169,7 @@ export type ClaimDetail = {
   trip_settlement_date?: string | null
   destination_city?: string | null
   claim_total: number
+  receipt_total: number
   currency: string
   status: string
   source_type: string
@@ -186,11 +195,16 @@ export type ClaimDetail = {
 
 export type ExecutiveDashboard = {
   total_claims: number
+  total_receipts: number
   analyzed_claims: number
+  analyzed_receipts: number
   suspicious_claims: number
+  suspicious_receipts: number
   wrong_claims: number
+  wrong_receipts: number
   suspicious_rate_pct: number
   wrong_claim_rate_pct: number
+  wrong_receipt_rate_pct: number
   by_risk_level: Record<string, number>
   by_department: Record<string, number>
   top_detection_types: Array<{
@@ -204,15 +218,21 @@ export type EmployeeRiskProfile = {
   employee_name: string
   department: string
   total_claims: number
+  total_receipts: number
   analyzed_claims: number
+  analyzed_receipts: number
   suspicious_claims: number
+  suspicious_receipts: number
   incorrect_claims: number
+  incorrect_receipts: number
   flagged_claims: number
+  flagged_receipts: number
   suspicious_rate_pct: number
   incorrect_rate_pct: number
   violation_rate_pct: number
   total_spend: number
   avg_claim_amount: number
+  avg_receipt_amount: number
   total_trip_days: number
   avg_trip_duration_days: number
   avg_cost_per_trip_day: number
@@ -227,18 +247,26 @@ export type EmployeeRiskProfile = {
   international_trips: number
   top_destination_city?: string | null
   last_claim_at?: string | null
+  last_receipt_at?: string | null
 }
 
 export type EmployeeRiskDashboard = {
   total_employees: number
   total_claims: number
+  total_receipts: number
   analyzed_claims: number
+  analyzed_receipts: number
   suspicious_claims: number
+  suspicious_receipts: number
   incorrect_claims: number
+  incorrect_receipts: number
   flagged_claims: number
+  flagged_receipts: number
   total_spend: number
   avg_claim_amount: number
+  avg_receipt_amount: number
   avg_claims_per_employee: number
+  avg_receipts_per_employee: number
   avg_trip_duration_days: number
   high_risk_employees: number
   risk_band_distribution: Record<string, number>
@@ -248,14 +276,20 @@ export type EmployeeRiskDashboard = {
 export type EmployeeDashboard = {
   employee_id: string
   total_claims: number
+  total_receipts: number
   pending_claims: number
+  pending_receipts: number
   analyzed_claims: number
+  analyzed_receipts: number
   suspicious_claims: number
+  suspicious_receipts: number
   recent_claims: ClaimSummary[]
+  recent_receipts: ClaimSummary[]
 }
 
 export type ClaimAnalysis = {
   claim_id: string
+  receipt_id: string
   employee_name: string
   risk_level: string
   risk_score: number
@@ -274,13 +308,16 @@ export type ClaimAnalysis = {
     detection_type: string
     supporting_facts: Record<string, unknown>
     source_references: Record<string, unknown>
+    related_records?: ClaimSummary[]
   }>
   recommendations: string[]
 }
 
 export type ExcelImportResult = {
   imported_claims: number
+  imported_receipts: number
   analyzed_claims: number
+  analyzed_receipts: number
   skipped_rows: number
   errors: string[]
   claim_ids: string[]
@@ -380,6 +417,7 @@ export type OutlierMetricOption = {
 
 export type OutlierMapPoint = {
   claim_id: string
+  receipt_id: string
   employee_id: string
   employee_name: string
   department: string

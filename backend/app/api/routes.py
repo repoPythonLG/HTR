@@ -7,10 +7,9 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
-from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
@@ -22,6 +21,7 @@ from app.schemas import (
     CaseManagementOut,
     CaseTimelineEventOut,
     CaseTimelineOut,
+    ClaimListOut,
     ClaimAnalysisOut,
     ClaimDetailOut,
     ClaimSummaryOut,
@@ -43,12 +43,11 @@ from app.schemas import (
     RiskSettingsOut,
     ReviewActionIn,
     SpreadsheetPreviewOut,
-    TokenOut,
     UploadResponse,
     UserOut,
 )
 from app.services.analysis import analyze_claim
-from app.services.auth import authenticate_user, create_access_token, get_current_user, require_roles
+from app.services.auth import get_current_user, require_roles
 from app.services.excel_import import parse_claim_rows, parse_spreadsheet_preview
 from app.services.policy import (
     extract_rules_from_policy_text,
@@ -76,11 +75,11 @@ def _enforce_employee_claim_scope(current_user: User, claim: Claim) -> None:
     if current_user.role != "employee":
         return
     if not current_user.employee_code or claim.employee_id != current_user.employee_code:
-        raise HTTPException(status_code=403, detail="You can only access your own claims")
+        raise HTTPException(status_code=403, detail="You can only access your own travel expense entries")
 
 
 def _sample_file_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "data" / "templates" / "sabic_claims_example_1000.xlsx"
+    return Path(__file__).resolve().parents[2] / "data" / "templates" / "sabic_hotel_receipts_example_1000.xlsx"
 
 
 def _display_label(value: Optional[str]) -> str:
@@ -201,8 +200,12 @@ def _build_summary_rows(db: Session, claims: List[Claim]) -> List[ClaimSummaryOu
                 trip_boundary=claim.trip_boundary,
                 expense_type=claim.expense_type,
                 to_country=claim.to_country,
+                to_city=claim.to_city,
                 masked_id=claim.masked_id,
                 trip_duration_days=claim.trip_duration_days,
+                start_date=claim.start_date,
+                end_date=claim.end_date,
+                trip_settlement_date=claim.trip_settlement_date,
                 destination_city=claim.destination_city,
                 claim_total=claim.claim_total,
                 currency=claim.currency,
@@ -242,25 +245,6 @@ def _normalise_case_tags(tags: List[str]) -> List[str]:
     return cleaned[:12]
 
 
-@router.post("/auth/login", response_model=TokenOut)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    user = authenticate_user(db, form_data.username, form_data.password)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    token = create_access_token({"sub": user.username, "role": user.role})
-    return TokenOut(
-        access_token=token,
-        token_type="bearer",
-        username=user.username,
-        role=user.role,
-    )
-
-
 @router.get("/auth/me", response_model=UserOut)
 def me(current_user: User = Depends(get_current_user)):
     return current_user
@@ -281,7 +265,7 @@ def upload_claim(
     current_user: User = Depends(require_roles("employee", "reviewer", "administrator")),
 ):
     if current_user.role == "employee" and current_user.employee_code and employee_id != current_user.employee_code:
-        raise HTTPException(status_code=403, detail="Employees can upload only their own claims")
+        raise HTTPException(status_code=403, detail="Employees can upload only their own travel expense entries")
 
     claim = Claim(
         employee_id=employee_id,
@@ -326,7 +310,7 @@ def import_excel_claims(
     current_user: User = Depends(require_roles("reviewer", "administrator")),
 ):
     content = file.file.read()
-    source_name = file.filename or "claims.xlsx"
+    source_name = file.filename or "travel_expense_entries.xlsx"
     records, errors = parse_claim_rows(source_name, content)
     if not records:
         return ExcelImportResponse(
@@ -566,13 +550,13 @@ def analyze(
 ):
     claim_ref = db.execute(select(Claim).where(Claim.claim_id == claim_id)).scalars().first()
     if not claim_ref:
-        raise HTTPException(status_code=404, detail="Claim not found")
+        raise HTTPException(status_code=404, detail="Travel expense entry not found")
     _enforce_employee_claim_scope(current_user, claim_ref)
 
     try:
         claim, detection_count, risk_score, risk_level = analyze_claim(db, claim_id)
     except ValueError:
-        raise HTTPException(status_code=404, detail="Claim not found")
+        raise HTTPException(status_code=404, detail="Travel expense entry not found")
 
     return AnalyzeResponse(
         claim_id=claim.claim_id,
@@ -583,11 +567,16 @@ def analyze(
     )
 
 
-@router.get("/claims", response_model=List[ClaimSummaryOut])
+@router.get("/claims", response_model=ClaimListOut)
 def list_claims(
     status: Optional[str] = None,
     queue: str = "all",
     suspicious_only: bool = False,
+    risk_level: Optional[str] = None,
+    search: Optional[str] = Query(default=None, max_length=128),
+    sort_by: str = "risk_desc",
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("employee", "reviewer", "administrator")),
 ):
@@ -595,7 +584,12 @@ def list_claims(
     if queue_text not in {"all", "active", "history"}:
         raise HTTPException(status_code=400, detail="Unsupported queue filter. Use all, active, or history.")
 
-    stmt = select(Claim).order_by(Claim.created_at.desc())
+    sort_text = (sort_by or "risk_desc").strip().lower()
+    supported_sorts = {"risk_desc", "risk_asc", "created_desc", "created_asc", "amount_desc", "amount_asc"}
+    if sort_text not in supported_sorts:
+        raise HTTPException(status_code=400, detail="Unsupported sort. Use risk_desc, risk_asc, created_desc, created_asc, amount_desc, or amount_asc.")
+
+    stmt = select(Claim).outerjoin(RiskAssessment)
     if queue_text == "active":
         stmt = stmt.where(Claim.status.in_(ACTIVE_CLAIM_STATUSES))
     elif queue_text == "history":
@@ -606,11 +600,57 @@ def list_claims(
     if suspicious_only:
         stmt = stmt.where(Claim.suspicious_flag.is_(True))
 
+    risk_text = (risk_level or "").strip().lower()
+    if risk_text:
+        if risk_text == "unscored":
+            stmt = stmt.where(RiskAssessment.risk_id.is_(None))
+        elif risk_text in {"low", "medium", "high", "critical"}:
+            stmt = stmt.where(func.lower(RiskAssessment.risk_level) == risk_text)
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported risk filter. Use low, medium, high, critical, or unscored.")
+
+    search_text = (search or "").strip()
+    if search_text:
+        pattern = f"%{search_text}%"
+        stmt = stmt.where(
+            or_(
+                Claim.claim_id.ilike(pattern),
+                Claim.employee_id.ilike(pattern),
+                Claim.employee_name.ilike(pattern),
+                Claim.trip_number.ilike(pattern),
+                Claim.destination_city.ilike(pattern),
+                Claim.to_city.ilike(pattern),
+                Claim.to_country.ilike(pattern),
+            )
+        )
+
     if current_user.role == "employee" and current_user.employee_code:
         stmt = stmt.where(Claim.employee_id == current_user.employee_code)
 
-    claims = db.execute(stmt).scalars().all()
-    return _build_summary_rows(db, claims)
+    total = int(db.execute(select(func.count()).select_from(stmt.subquery())).scalar() or 0)
+
+    risk_sort_value = func.coalesce(RiskAssessment.risk_score, Claim.risk_score_cached, 0)
+    if sort_text == "risk_asc":
+        stmt = stmt.order_by(risk_sort_value.asc(), Claim.created_at.desc())
+    elif sort_text == "created_desc":
+        stmt = stmt.order_by(Claim.created_at.desc())
+    elif sort_text == "created_asc":
+        stmt = stmt.order_by(Claim.created_at.asc())
+    elif sort_text == "amount_desc":
+        stmt = stmt.order_by(Claim.claim_total.desc(), risk_sort_value.desc())
+    elif sort_text == "amount_asc":
+        stmt = stmt.order_by(Claim.claim_total.asc(), risk_sort_value.desc())
+    else:
+        stmt = stmt.order_by(risk_sort_value.desc(), Claim.created_at.desc())
+
+    claims = db.execute(stmt.limit(limit).offset(offset)).scalars().all()
+    return ClaimListOut(
+        items=_build_summary_rows(db, claims),
+        total=total,
+        limit=limit,
+        offset=offset,
+        sort_by=sort_text,
+    )
 
 
 @router.get("/claims/{claim_id}", response_model=ClaimDetailOut)
@@ -635,7 +675,7 @@ def get_claim(
         .first()
     )
     if not claim:
-        raise HTTPException(status_code=404, detail="Claim not found")
+        raise HTTPException(status_code=404, detail="Travel expense entry not found")
 
     _enforce_employee_claim_scope(current_user, claim)
     return claim
@@ -649,7 +689,7 @@ def get_claim_case_management(
 ):
     claim = db.execute(select(Claim).where(Claim.claim_id == claim_id)).scalars().first()
     if not claim:
-        raise HTTPException(status_code=404, detail="Claim not found")
+        raise HTTPException(status_code=404, detail="Travel expense entry not found")
     _enforce_employee_claim_scope(current_user, claim)
     return _case_management_out(claim)
 
@@ -663,7 +703,7 @@ def update_claim_case_management(
 ):
     claim = db.execute(select(Claim).where(Claim.claim_id == claim_id)).scalars().first()
     if not claim:
-        raise HTTPException(status_code=404, detail="Claim not found")
+        raise HTTPException(status_code=404, detail="Travel expense entry not found")
 
     owner_id = payload.case_owner_id.strip() if payload.case_owner_id else None
     next_action = payload.case_next_action.strip() if payload.case_next_action else None
@@ -741,14 +781,14 @@ def get_claim_case_timeline(
         .first()
     )
     if not claim:
-        raise HTTPException(status_code=404, detail="Claim not found")
+        raise HTTPException(status_code=404, detail="Travel expense entry not found")
     _enforce_employee_claim_scope(current_user, claim)
 
     events: List[CaseTimelineEventOut] = [
         _timeline_event(
             event_id=f"claim-created-{claim.claim_id}",
             event_type="claim_created",
-            title="Claim record created",
+            title="Travel expense entry record created",
             description=(
                 f"{claim.employee_name} submitted a {claim.claim_total:,.2f} {claim.currency} "
                 f"{_display_label(claim.expense_type)} for {claim.destination_city or claim.to_city or 'an unspecified destination'}."
@@ -792,7 +832,7 @@ def get_claim_case_timeline(
                 event_id=f"document-{document.document_id}",
                 event_type="source_document",
                 title="Source document registered",
-                description=f"{document.file_name} was stored as source evidence for this claim.",
+                description=f"{document.file_name} was stored as source evidence for this travel expense entry.",
                 timestamp=document.created_at,
                 severity="neutral",
                 metadata={
@@ -919,11 +959,11 @@ def claim_analysis_view(
     )
 
     if not claim:
-        raise HTTPException(status_code=404, detail="Claim not found")
+        raise HTTPException(status_code=404, detail="Travel expense entry not found")
     _enforce_employee_claim_scope(current_user, claim)
 
     if not claim.risk_assessment:
-        raise HTTPException(status_code=409, detail="Claim has not been analyzed yet")
+        raise HTTPException(status_code=409, detail="Travel expense entry has not been analyzed yet")
 
     findings = [
         {
@@ -945,6 +985,26 @@ def claim_analysis_view(
         }
         for item in claim.detections
     ]
+
+    for evidence in evidence_summary:
+        facts = evidence.get("supporting_facts") or {}
+        related_ids: set[str] = set()
+        for key in ("related_claims", "overlapping_claim_ids"):
+            raw_value = facts.get(key)
+            if isinstance(raw_value, list):
+                related_ids.update(str(item) for item in raw_value if item)
+            elif raw_value:
+                related_ids.add(str(raw_value))
+
+        if related_ids:
+            related_claims = (
+                db.execute(select(Claim).where(Claim.claim_id.in_(related_ids)).limit(10))
+                .scalars()
+                .all()
+            )
+            evidence["related_records"] = [
+                row.model_dump() for row in _build_summary_rows(db, related_claims)
+            ]
 
     recommendations = sorted({item.recommended_action for item in claim.detections})
 
@@ -971,7 +1031,7 @@ def get_document(
 ):
     claim = db.execute(select(Claim).where(Claim.claim_id == claim_id)).scalars().first()
     if not claim:
-        raise HTTPException(status_code=404, detail="Claim not found")
+        raise HTTPException(status_code=404, detail="Travel expense entry not found")
     _enforce_employee_claim_scope(current_user, claim)
 
     document = (
@@ -1002,7 +1062,7 @@ def review_action(
 ):
     claim = db.execute(select(Claim).where(Claim.claim_id == claim_id)).scalars().first()
     if not claim:
-        raise HTTPException(status_code=404, detail="Claim not found")
+        raise HTTPException(status_code=404, detail="Travel expense entry not found")
 
     decision = ReviewerDecision(
         claim_id=claim_id,
@@ -1034,7 +1094,7 @@ def review_action(
         claim_id=claim.claim_id,
         event_type="review_decision",
         title=f"Reviewer decision: {_display_label(payload.status)}",
-        description=payload.notes or payload.disposition_reason or "Reviewer disposition submitted.",
+        description=payload.notes or payload.disposition_reason or "Reviewer decision submitted.",
         actor_id=payload.reviewer_id,
         severity=claim.status,
         metadata={
@@ -1181,8 +1241,8 @@ def _employee_risk_index(
 
 
 OUTLIER_METRIC_OPTIONS: Dict[str, str] = {
-    "claim_total": "Claim Amount (SAR)",
-    "location_adjusted_claim_total": "Location-Adjusted Claim Amount (SAR)",
+    "claim_total": "Travel Expense Amount (SAR)",
+    "location_adjusted_claim_total": "Location-Adjusted Travel Expense Amount (SAR)",
     "trip_duration_days": "Trip Duration (Days)",
     "risk_score": "Risk Score",
     "detection_count": "Detection Count",
@@ -1804,31 +1864,31 @@ def model_governance(
             "key": "amount_outlier",
             "name": "Amount Outlier and Abnormality Detection",
             "status": _method_status(risk_settings.detection_mode, "amount_outlier"),
-            "purpose": "Find claims whose value is statistically unusual compared with similar trips.",
+            "purpose": "Find travel expense entries whose value is statistically unusual compared with similar trips.",
             "how_it_works": (
-                "The engine compares each claim against peers with matching expense type, trip boundary, "
+                "The engine compares each travel expense entry against peers with matching expense type, trip boundary, "
                 "and activity. It calculates mean, median, standard deviation, IQR upper bound, z-score, "
                 "and robust z-score before raising an abnormality finding."
             ),
             "reviewer_interpretation": (
-                "A high score means the claim sits far outside the peer pattern. It is not an automatic rejection; "
-                "the reviewer should validate itinerary, hotel invoice, and business justification."
+                "A high score means the travel expense entry sits far outside the peer pattern. It is not an automatic rejection; "
+                "the reviewer should validate itinerary, supporting evidence, and business justification."
             ),
             "limitations": [
                 "Small peer groups reduce statistical confidence.",
                 "Legitimate executive travel, late booking, or event pricing can create valid outliers.",
                 "Historical peer data must reflect current destination cost conditions.",
             ],
-            "primary_inputs": ["Claim amount", "Expense type", "Trip boundary", "Trip activity", "Peer sample"],
+            "primary_inputs": ["Travel expense entry amount", "Expense type", "Trip boundary", "Trip activity", "Peer sample"],
             "thresholds": ["outlier_min_sample_size", "risk_critical_min"],
         },
         {
             "key": "mean_threshold",
             "name": "Peer Mean Threshold Detection",
             "status": _method_status(risk_settings.detection_mode, "mean_threshold"),
-            "purpose": "Highlight claims that exceed the peer mean by a configured percentage.",
+            "purpose": "Highlight travel expense entries that exceed the peer mean by a configured percentage.",
             "how_it_works": (
-                "The method calculates the peer mean and compares the claim amount against mean * "
+                "The method calculates the peer mean and compares the travel expense amount against mean * "
                 "(1 + configured threshold percentage)."
             ),
             "reviewer_interpretation": (
@@ -1836,11 +1896,11 @@ def model_governance(
                 "as a secondary control alongside statistical outlier detection."
             ),
             "limitations": [
-                "Mean values can be distorted by already abnormal claims.",
+                "Mean values can be distorted by already abnormal travel expense entries.",
                 "The method does not understand one-off business context by itself.",
                 "A single percentage may be too blunt for every destination and trip type.",
             ],
-            "primary_inputs": ["Claim amount", "Peer mean", "Configured threshold", "Peer group"],
+            "primary_inputs": ["Travel expense entry amount", "Peer mean", "Configured threshold", "Peer group"],
             "thresholds": ["mean_threshold_pct", "location_adjusted_threshold_pct"],
         },
         {
@@ -1849,19 +1909,19 @@ def model_governance(
             "status": _method_status(risk_settings.detection_mode, "location_adjusted"),
             "purpose": "Normalise spend by country and city so expensive destinations are assessed fairly.",
             "how_it_works": (
-                "The engine applies city hotel benchmarks or country cost factors to create a location-adjusted "
-                "claim amount before comparing behaviour across destinations."
+                "The engine applies city accommodation benchmarks or country cost factors to create a location-adjusted "
+                "travel expense amount before comparing behaviour across destinations."
             ),
             "reviewer_interpretation": (
-                "A location-adjusted anomaly means the claim is unusual even after allowing for the destination's "
+                "A location-adjusted anomaly means the travel expense entry is unusual even after allowing for the destination's "
                 "expected cost level."
             ),
             "limitations": [
-                "Benchmarks must be maintained as hotel markets change.",
+                "Benchmarks must be maintained as destination cost conditions change.",
                 "Unknown cities fall back to country or trip-boundary defaults.",
                 "Major events and seasonal pricing may still need manual context.",
             ],
-            "primary_inputs": ["Destination city", "Destination country", "Trip boundary", "Claim amount"],
+            "primary_inputs": ["Destination city", "Destination country", "Trip boundary", "Travel expense entry amount"],
             "thresholds": ["location_adjusted_threshold_pct", "hotel_deviation_pct"],
         },
         {
@@ -1874,7 +1934,7 @@ def model_governance(
                 "Low, Medium, High, or Critical bands for queue prioritisation."
             ),
             "reviewer_interpretation": (
-                "Risk score controls workflow priority, not guilt. Disposition remains a human decision supported "
+                "Risk score controls workflow priority, not guilt. Decision remains a human decision supported "
                 "by evidence cards and the audit timeline."
             ),
             "limitations": [
@@ -1882,7 +1942,7 @@ def model_governance(
                 "More detections can increase priority even when individual signals are moderate.",
                 "Human review is required before adverse action.",
             ],
-            "primary_inputs": ["Detection weights", "Severity", "Policy thresholds", "Reviewer disposition history"],
+            "primary_inputs": ["Detection weights", "Severity", "Policy thresholds", "Reviewer decision history"],
             "thresholds": ["risk_critical_min", "weight_amount_outlier_abnormality", "weight_location_cost_anomaly"],
         },
     ]
@@ -1914,10 +1974,10 @@ def model_governance(
 
     controls = [
         {
-            "name": "Human-in-the-loop disposition",
+            "name": "Human-in-the-loop decision",
             "status": "Enforced",
             "owner": "HR Compliance",
-            "evidence": "Claims remain in active review until a reviewer records a disposition and notes.",
+            "evidence": "travel expense entries remain in active review until a reviewer records a decision and notes.",
         },
         {
             "name": "Explainability evidence",

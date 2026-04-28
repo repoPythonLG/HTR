@@ -1,8 +1,8 @@
 import dayjs from 'dayjs'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { fetchClaims } from '../api/client'
-import { ClaimsIcon, DocumentIcon, RefreshIcon } from '../components/BrandIcons'
+import { fetchReceipts } from '../api/client'
+import { ReceiptsIcon, DocumentIcon, RefreshIcon } from '../components/BrandIcons'
 import { CollapsiblePanel } from '../components/CollapsiblePanel'
 import { PageTabs } from '../components/PageTabs'
 import { ClaimSummary } from '../types'
@@ -25,18 +25,18 @@ function priorityChipClass(priority?: string | null) {
 export function ProcessedClaimsHistoryPage() {
   const navigate = useNavigate()
 
-  const [claims, setClaims] = useState<ClaimSummary[]>([])
+  const [receipts, setReceipts] = useState<ClaimSummary[]>([])
   const [statusFilter, setStatusFilter] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
 
-  async function loadClaims() {
+  async function loadReceipts() {
     setLoading(true)
     setError(undefined)
     try {
-      const rows = await fetchClaims({ queue: 'history', status: statusFilter || undefined })
-      setClaims(rows)
+      const rows = await fetchReceipts({ queue: 'history', status: statusFilter || undefined })
+      setReceipts(rows)
     } catch (err) {
       setError(String(err))
     } finally {
@@ -45,28 +45,29 @@ export function ProcessedClaimsHistoryPage() {
   }
 
   useEffect(() => {
-    loadClaims()
+    loadReceipts()
   }, [statusFilter])
 
-  const filteredClaims = useMemo(() => {
+  const filteredReceipts = useMemo(() => {
     const q = searchTerm.trim().toLowerCase()
-    if (!q) return claims
+    if (!q) return receipts
 
-    return claims.filter((claim) => (
-      claim.claim_id.toLowerCase().includes(q) ||
-      claim.employee_id.toLowerCase().includes(q) ||
-      claim.employee_name.toLowerCase().includes(q) ||
-      (claim.destination_city || '').toLowerCase().includes(q) ||
-      (claim.trip_number || '').toLowerCase().includes(q)
+    return receipts.filter((receipt) => (
+      receipt.receipt_id.toLowerCase().includes(q) ||
+      receipt.employee_id.toLowerCase().includes(q) ||
+      receipt.employee_name.toLowerCase().includes(q) ||
+      (receipt.destination_city || '').toLowerCase().includes(q) ||
+      (receipt.trip_number || '').toLowerCase().includes(q)
     ))
-  }, [claims, searchTerm])
+  }, [receipts, searchTerm])
 
-  const reviewedCount = claims.filter((item) => item.status === 'reviewed').length
-  const escalatedCount = claims.filter((item) => item.status === 'escalated').length
+  const reviewedCount = receipts.filter((item) => item.status === 'reviewed').length
+  const escalatedCount = receipts.filter((item) => item.status === 'escalated').length
 
   return (
-    <div className="app-page claims-workbench-page">
+    <div className="app-page receipts-workbench-page">
       <PageTabs
+        defaultTabId="records"
         tabs={[
           {
             id: 'overview',
@@ -77,10 +78,10 @@ export function ProcessedClaimsHistoryPage() {
                 <CollapsiblePanel className="panel">
                   <div className="panel-head">
                     <div>
-                      <h2>Processed Claims History</h2>
-                      <p>Dispositioned claims are stored here and excluded from the active risk workbench and dashboards.</p>
+                      <h2>Processed Entry History</h2>
+                      <p>Decisioned travel expense entries are stored here and excluded from the active risk workbench and dashboards.</p>
                     </div>
-                    <button onClick={() => loadClaims()}>
+                    <button onClick={() => loadReceipts()}>
                       <span className="btn-inline"><RefreshIcon size={14} />Refresh History</span>
                     </button>
                   </div>
@@ -91,15 +92,15 @@ export function ProcessedClaimsHistoryPage() {
                 <CollapsiblePanel className="panel" title="History Summary">
                   <div className="metric-grid compact">
                     <article className="metric-card">
-                      <div className="metric-line"><span>Total Processed</span><ClaimsIcon className="metric-icon" /></div>
-                      <strong>{claims.length}</strong>
+                      <div className="metric-line"><span>Total Processed</span><ReceiptsIcon className="metric-icon" /></div>
+                      <strong>{receipts.length}</strong>
                     </article>
                     <article className="metric-card">
-                      <div className="metric-line"><span>Reviewed</span><ClaimsIcon className="metric-icon" /></div>
+                      <div className="metric-line"><span>Reviewed</span><ReceiptsIcon className="metric-icon" /></div>
                       <strong>{reviewedCount}</strong>
                     </article>
                     <article className="metric-card">
-                      <div className="metric-line"><span>Escalated</span><ClaimsIcon className="metric-icon" /></div>
+                      <div className="metric-line"><span>Escalated</span><ReceiptsIcon className="metric-icon" /></div>
                       <strong>{escalatedCount}</strong>
                     </article>
                   </div>
@@ -112,12 +113,12 @@ export function ProcessedClaimsHistoryPage() {
             label: 'History Records',
             eyebrow: 'Archive',
             children: (
-              <CollapsiblePanel className="panel claims-workbench-panel app-grow" allowFocusView>
-                <div className="claims-workbench-controls">
+              <CollapsiblePanel className="panel receipts-workbench-panel app-grow" allowFocusView>
+                <div className="receipts-workbench-controls">
                   <div className="toolbar">
                     <label>
-                      Search claim / employee
-                      <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Claim ID, employee ID, name, trip number" />
+                      Search entry / employee
+                      <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Entry ID, employee ID, name, trip number" />
                     </label>
 
                     <label>
@@ -131,11 +132,11 @@ export function ProcessedClaimsHistoryPage() {
                   </div>
                 </div>
 
-                <div className="table-wrap claims-workbench-table-wrap table-fill-wrap">
+                <div className="table-wrap receipts-workbench-table-wrap table-fill-wrap">
                   <table className="table professional-table">
                     <thead>
                       <tr>
-                        <th>Claim</th>
+                        <th>Entry</th>
                         <th>Employee</th>
                         <th>Destination</th>
                         <th>Trip Profile</th>
@@ -147,40 +148,40 @@ export function ProcessedClaimsHistoryPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredClaims.length === 0 && (
+                      {filteredReceipts.length === 0 && (
                         <tr>
-                          <td colSpan={9} className="empty-table">No processed claims match your filters.</td>
+                          <td colSpan={9} className="empty-table">No processed travel expense entries match your filters.</td>
                         </tr>
                       )}
 
-                      {filteredClaims.map((claim) => (
-                        <tr key={claim.claim_id}>
+                      {filteredReceipts.map((receipt) => (
+                        <tr key={receipt.receipt_id}>
                           <td>
-                            <strong>{claim.claim_id}</strong>
-                            <p>{claim.trip_number || '-'}</p>
+                            <strong>{receipt.receipt_id}</strong>
+                            <p>{receipt.trip_number || '-'}</p>
                           </td>
                           <td>
-                            <strong>{claim.employee_name}</strong>
-                            <p>{claim.employee_id}</p>
+                            <strong>{receipt.employee_name}</strong>
+                            <p>{receipt.employee_id}</p>
                           </td>
                           <td>
-                            <p>{claim.destination_city || '-'}</p>
-                            <p>{claim.to_country || '-'}</p>
+                            <p>{receipt.destination_city || '-'}</p>
+                            <p>{receipt.to_country || '-'}</p>
                           </td>
                           <td>
-                            <p>{claim.trip_activity || '-'}</p>
-                            <p>{claim.trip_boundary || '-'}</p>
+                            <p>{receipt.trip_activity || '-'}</p>
+                            <p>{receipt.trip_boundary || '-'}</p>
                           </td>
-                          <td>{claim.claim_total.toFixed(2)} {claim.currency}</td>
-                          <td><span className={statusChipClass(claim.status)}>{claim.status}</span></td>
+                          <td>{receipt.receipt_total.toFixed(2)} {receipt.currency}</td>
+                          <td><span className={statusChipClass(receipt.status)}>{receipt.status}</span></td>
                           <td>
-                            <span className={priorityChipClass(claim.case_priority)}>{claim.case_priority || 'standard'}</span>
-                            <p>{claim.case_owner_id || 'Unassigned'}</p>
-                            <p>{claim.case_closed_at ? `Closed ${dayjs(claim.case_closed_at).format('DD MMM HH:mm')}` : 'Closure pending'}</p>
+                            <span className={priorityChipClass(receipt.case_priority)}>{receipt.case_priority || 'standard'}</span>
+                            <p>{receipt.case_owner_id || 'Unassigned'}</p>
+                            <p>{receipt.case_closed_at ? `Closed ${dayjs(receipt.case_closed_at).format('DD MMM HH:mm')}` : 'Closure pending'}</p>
                           </td>
-                          <td>{dayjs(claim.created_at).format('DD MMM YYYY HH:mm')}</td>
+                          <td>{dayjs(receipt.created_at).format('DD MMM YYYY HH:mm')}</td>
                           <td>
-                            <button className="small-btn" onClick={() => navigate(`/claims/${claim.claim_id}/analysis`)}>
+                            <button className="small-btn" onClick={() => navigate(`/receipts/${receipt.receipt_id}/analysis`)}>
                               <span className="btn-inline"><DocumentIcon size={13} />Open</span>
                             </button>
                           </td>

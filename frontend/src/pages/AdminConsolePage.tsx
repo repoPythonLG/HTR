@@ -82,7 +82,7 @@ export function AdminConsolePage() {
                 <div className="panel-head">
                   <div>
                     <h2 className="section-title"><RiskIcon size={18} />Risk Detection Settings</h2>
-                    <p>Configure outlier and mean-threshold detection for Excel travel claim analysis.</p>
+                    <p>Configure outlier and mean-threshold detection for Excel travel travel expense entry analysis.</p>
                   </div>
                 </div>
                 {riskMessage && <div className="success-box">{riskMessage}</div>}

@@ -48,19 +48,9 @@ def client(tmp_path: Path):
 
 
 @pytest.fixture()
-def auth_headers(client):
-    def login(username: str, password: str) -> dict[str, str]:
-        response = client.post(
-            "/api/v1/auth/login",
-            data={"username": username, "password": password},
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-        assert response.status_code == 200, response.text
-        token = response.json()["access_token"]
-        return {"Authorization": f"Bearer {token}"}
-
+def auth_headers():
     return {
-        "administrator": login("administrator@sabic.local", "Admin#2026"),
-        "reviewer": login("reviewer@sabic.local", "Reviewer#2026"),
-        "employee": login("employee@sabic.local", "Employee#2026"),
+        "administrator": {"X-Demo-Role": "administrator"},
+        "reviewer": {"X-Demo-Role": "reviewer"},
+        "employee": {"X-Demo-Role": "employee"},
     }

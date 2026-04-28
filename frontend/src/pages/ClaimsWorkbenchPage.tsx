@@ -1,8 +1,8 @@
 import dayjs from 'dayjs'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { analyzeClaim, fetchClaims } from '../api/client'
-import { AnalyzeIcon, ClaimsIcon, DocumentIcon, RefreshIcon, RiskIcon, WrongClaimIcon } from '../components/BrandIcons'
+import { analyzeClaim, fetchReceiptPage } from '../api/client'
+import { AnalyzeIcon, ReceiptsIcon, DocumentIcon, RefreshIcon, RiskIcon, WrongClaimIcon } from '../components/BrandIcons'
 import { CollapsiblePanel } from '../components/CollapsiblePanel'
 import { PageTabs } from '../components/PageTabs'
 import { ClaimSummary } from '../types'
@@ -24,87 +24,105 @@ function priorityChipClass(priority?: string | null) {
   return 'chip low'
 }
 
+function useDebouncedValue(value: string, delayMs = 300) {
+  const [debouncedValue, setDebouncedValue] = useState(value)
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => setDebouncedValue(value), delayMs)
+    return () => window.clearTimeout(handle)
+  }, [value, delayMs])
+
+  return debouncedValue
+}
+
 export function ClaimsWorkbenchPage() {
   const navigate = useNavigate()
 
-  const [claims, setClaims] = useState<ClaimSummary[]>([])
+  const [receipts, setReceipts] = useState<ClaimSummary[]>([])
+  const [totalReceipts, setTotalReceipts] = useState(0)
   const [statusFilter, setStatusFilter] = useState('')
   const [riskFilter, setRiskFilter] = useState('')
   const [suspiciousOnly, setSuspiciousOnly] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const debouncedSearchTerm = useDebouncedValue(searchTerm)
+  const [sortBy, setSortBy] = useState('risk_desc')
+  const [pageSize, setPageSize] = useState(50)
+  const [pageIndex, setPageIndex] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
   const [analyzingId, setAnalyzingId] = useState<string>()
 
-  async function loadClaims() {
+  const loadReceipts = useCallback(async () => {
     setLoading(true)
     setError(undefined)
     try {
-      const rows = await fetchClaims({ queue: 'active', status: statusFilter || undefined, suspiciousOnly })
-      setClaims(rows)
+      const page = await fetchReceiptPage({
+        queue: 'active',
+        status: statusFilter || undefined,
+        suspiciousOnly,
+        riskLevel: riskFilter || undefined,
+        search: debouncedSearchTerm.trim() || undefined,
+        sortBy,
+        limit: pageSize,
+        offset: pageIndex * pageSize
+      })
+      setReceipts(page.items)
+      setTotalReceipts(page.total)
     } catch (err) {
       setError(String(err))
     } finally {
       setLoading(false)
     }
-  }
+  }, [debouncedSearchTerm, pageIndex, pageSize, riskFilter, sortBy, statusFilter, suspiciousOnly])
 
   useEffect(() => {
-    loadClaims()
-  }, [statusFilter, suspiciousOnly])
+    setPageIndex(0)
+  }, [debouncedSearchTerm])
 
-  async function handleAnalyzeAndOpen(claimId: string) {
-    setAnalyzingId(claimId)
+  useEffect(() => {
+    loadReceipts()
+  }, [loadReceipts])
+
+  async function handleAnalyzeAndOpen(receiptId: string) {
+    setAnalyzingId(receiptId)
     setError(undefined)
     try {
-      await analyzeClaim(claimId)
-      navigate(`/claims/${claimId}/analysis`)
+      await analyzeClaim(receiptId)
+      navigate(`/receipts/${receiptId}/analysis`)
     } catch (err) {
       setError(String(err))
     } finally {
       setAnalyzingId(undefined)
-      await loadClaims()
+      await loadReceipts()
     }
   }
 
-  const filteredClaims = useMemo(() => {
-    const q = searchTerm.trim().toLowerCase()
-    return claims.filter((claim) => {
-      const level = (claim.risk_level || 'Unscored').toLowerCase()
-      if (riskFilter && level !== riskFilter.toLowerCase()) {
-        return false
-      }
-
-      if (!q) {
-        return true
-      }
-
-      return (
-        claim.claim_id.toLowerCase().includes(q) ||
-        claim.employee_id.toLowerCase().includes(q) ||
-        claim.employee_name.toLowerCase().includes(q) ||
-        (claim.destination_city || '').toLowerCase().includes(q) ||
-        (claim.trip_number || '').toLowerCase().includes(q)
-      )
-    })
-  }, [claims, riskFilter, searchTerm])
-
   const kpi = useMemo(() => {
-    const total = filteredClaims.length
-    const suspicious = filteredClaims.filter((row) => row.suspicious_flag).length
-    const incorrect = filteredClaims.filter((row) => row.incorrect_flag).length
-    const averageRisk = total === 0 ? 0 : filteredClaims.reduce((sum, row) => sum + (row.risk_score || 0), 0) / total
+    const visible = receipts.length
+    const suspicious = receipts.filter((row) => row.suspicious_flag).length
+    const incorrect = receipts.filter((row) => row.incorrect_flag).length
+    const averageRisk = visible === 0 ? 0 : receipts.reduce((sum, row) => sum + (row.risk_score || 0), 0) / visible
     return {
-      total,
+      total: totalReceipts,
+      visible,
       suspicious,
       incorrect,
       averageRisk: Number(averageRisk.toFixed(1))
     }
-  }, [filteredClaims])
+  }, [receipts, totalReceipts])
+
+  const showingFrom = totalReceipts === 0 ? 0 : pageIndex * pageSize + 1
+  const showingTo = Math.min(totalReceipts, pageIndex * pageSize + receipts.length)
+  const totalPages = Math.max(1, Math.ceil(totalReceipts / pageSize))
+
+  function resetToFirstPage() {
+    setPageIndex(0)
+  }
 
   return (
-    <div className="app-page claims-workbench-page">
+    <div className="app-page receipts-workbench-page">
       <PageTabs
+        defaultTabId="queue"
         tabs={[
           {
             id: 'overview',
@@ -115,10 +133,10 @@ export function ClaimsWorkbenchPage() {
                 <CollapsiblePanel className="panel">
                   <div className="panel-head">
                     <div>
-                      <h2>Claims Workbench</h2>
-                      <p>Review queue with suspicious-claim prioritization and analyst drilldown.</p>
+                      <h2>Travel Expense Entry Workbench</h2>
+                      <p>Review queue with suspicious-entry prioritization and analyst drilldown.</p>
                     </div>
-                    <button onClick={() => loadClaims()}>
+                    <button onClick={() => loadReceipts()}>
                       <span className="btn-inline"><RefreshIcon size={14} />Refresh Queue</span>
                     </button>
                   </div>
@@ -129,15 +147,19 @@ export function ClaimsWorkbenchPage() {
                 <CollapsiblePanel className="panel" title="Queue Summary">
                   <div className="metric-grid compact">
                     <article className="metric-card">
-                      <div className="metric-line"><span>Claims in View</span><ClaimsIcon className="metric-icon" /></div>
+                      <div className="metric-line"><span>Matching Entries</span><ReceiptsIcon className="metric-icon" /></div>
                       <strong>{kpi.total}</strong>
                     </article>
                     <article className="metric-card">
-                      <div className="metric-line"><span>Suspicious</span><RiskIcon className="metric-icon" /></div>
+                      <div className="metric-line"><span>Loaded Page</span><ReceiptsIcon className="metric-icon" /></div>
+                      <strong>{kpi.visible}</strong>
+                    </article>
+                    <article className="metric-card">
+                      <div className="metric-line"><span>Suspicious On Page</span><RiskIcon className="metric-icon" /></div>
                       <strong>{kpi.suspicious}</strong>
                     </article>
                     <article className="metric-card">
-                      <div className="metric-line"><span>Incorrect</span><WrongClaimIcon className="metric-icon" /></div>
+                      <div className="metric-line"><span>Incorrect On Page</span><WrongClaimIcon className="metric-icon" /></div>
                       <strong>{kpi.incorrect}</strong>
                     </article>
                     <article className="metric-card">
@@ -151,20 +173,20 @@ export function ClaimsWorkbenchPage() {
           },
           {
             id: 'queue',
-            label: 'Claims Queue',
+            label: 'Travel Expense Entries',
             eyebrow: 'Workbench',
             children: (
-              <CollapsiblePanel className="panel claims-workbench-panel app-grow" allowFocusView>
-                <div className="claims-workbench-controls">
+              <CollapsiblePanel className="panel receipts-workbench-panel app-grow" allowFocusView>
+                <div className="receipts-workbench-controls">
                   <div className="toolbar">
                     <label>
-                      Search claim / employee
-                      <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Claim ID, employee ID, name, trip number" />
+                      Search entry / employee
+                      <input value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); resetToFirstPage() }} placeholder="Entry ID, employee ID, name, trip number" />
                     </label>
 
                     <label>
                       Status Filter
-                      <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                      <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); resetToFirstPage() }}>
                         <option value="">All</option>
                         <option value="uploaded">Uploaded</option>
                         <option value="analyzed">Analyzed</option>
@@ -174,7 +196,7 @@ export function ClaimsWorkbenchPage() {
 
                     <label>
                       Risk Filter
-                      <select value={riskFilter} onChange={(e) => setRiskFilter(e.target.value)}>
+                      <select value={riskFilter} onChange={(e) => { setRiskFilter(e.target.value); resetToFirstPage() }}>
                         <option value="">All</option>
                         <option value="critical">Critical</option>
                         <option value="high">High</option>
@@ -184,18 +206,57 @@ export function ClaimsWorkbenchPage() {
                       </select>
                     </label>
 
+                    <label>
+                      Sort Order
+                      <select value={sortBy} onChange={(e) => { setSortBy(e.target.value); resetToFirstPage() }}>
+                        <option value="risk_desc">Highest risk first</option>
+                        <option value="risk_asc">Lowest risk first</option>
+                        <option value="created_desc">Newest first</option>
+                        <option value="created_asc">Oldest first</option>
+                        <option value="amount_desc">Highest amount first</option>
+                        <option value="amount_asc">Lowest amount first</option>
+                      </select>
+                    </label>
+
+                    <label>
+                      Rows
+                      <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); resetToFirstPage() }}>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                        <option value={200}>200</option>
+                      </select>
+                    </label>
+
                     <label className="checkbox-inline">
-                      <input type="checkbox" checked={suspiciousOnly} onChange={(e) => setSuspiciousOnly(e.target.checked)} />
-                      Prioritize suspicious claims
+                      <input type="checkbox" checked={suspiciousOnly} onChange={(e) => { setSuspiciousOnly(e.target.checked); resetToFirstPage() }} />
+                      Show suspicious only
                     </label>
                   </div>
                 </div>
 
-                <div className="table-wrap claims-workbench-table-wrap table-fill-wrap">
+                <div className="queue-page-strip">
+                  <span>
+                    {loading
+                      ? 'Loading entry queue...'
+                      : `Showing ${showingFrom}-${showingTo} of ${totalReceipts} matching entries`}
+                  </span>
+                  <div className="pagination-controls">
+                    <button className="small-btn" disabled={pageIndex === 0 || loading} onClick={() => setPageIndex((page) => Math.max(0, page - 1))}>
+                      Previous
+                    </button>
+                    <strong>Page {pageIndex + 1} of {totalPages}</strong>
+                    <button className="small-btn" disabled={pageIndex + 1 >= totalPages || loading} onClick={() => setPageIndex((page) => page + 1)}>
+                      Next
+                    </button>
+                  </div>
+                </div>
+
+                <div className="table-wrap receipts-workbench-table-wrap table-fill-wrap">
                   <table className="table professional-table">
                     <thead>
                       <tr>
-                        <th>Claim</th>
+                        <th>Entry</th>
                         <th>Employee</th>
                         <th>Destination</th>
                         <th>Trip Profile</th>
@@ -208,60 +269,60 @@ export function ClaimsWorkbenchPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredClaims.length === 0 && (
+                      {receipts.length === 0 && (
                         <tr>
                           <td colSpan={10} className="empty-table">
-                            No claims match your filters. Use the Data Intake window to upload a new spreadsheet.
+                            No travel expense entries match your filters. Use the Data Intake window to upload a new spreadsheet.
                           </td>
                         </tr>
                       )}
 
-                      {filteredClaims.map((claim) => (
+                      {receipts.map((receipt) => (
                         <tr
-                          key={claim.claim_id}
-                          className={`${claim.suspicious_flag ? 'row-suspicious' : ''} ${claim.incorrect_flag ? 'row-incorrect' : ''}`}
+                          key={receipt.receipt_id}
+                          className={`${receipt.suspicious_flag ? 'row-suspicious' : ''} ${receipt.incorrect_flag ? 'row-incorrect' : ''}`}
                         >
                           <td>
-                            <strong>{claim.claim_id}</strong>
-                            <p>{claim.status}</p>
-                            <p>{claim.trip_number || '-'}</p>
+                            <strong>{receipt.receipt_id}</strong>
+                            <p>{receipt.status}</p>
+                            <p>{receipt.trip_number || '-'}</p>
                           </td>
                           <td>
-                            <strong>{claim.employee_name}</strong>
-                            <p>{claim.employee_id}</p>
+                            <strong>{receipt.employee_name}</strong>
+                            <p>{receipt.employee_id}</p>
                           </td>
                           <td>
-                            <p>{claim.destination_city || '-'}</p>
-                            <p>{claim.to_country || '-'}</p>
+                            <p>{receipt.destination_city || '-'}</p>
+                            <p>{receipt.to_country || '-'}</p>
                           </td>
                           <td>
-                            <p>{claim.trip_activity || '-'}</p>
-                            <p>{claim.trip_boundary || '-'}</p>
-                            <p>{claim.trip_duration_days ? `${claim.trip_duration_days} day(s)` : '-'}</p>
+                            <p>{receipt.trip_activity || '-'}</p>
+                            <p>{receipt.trip_boundary || '-'}</p>
+                            <p>{receipt.trip_duration_days ? `${receipt.trip_duration_days} day(s)` : '-'}</p>
                           </td>
-                          <td>{claim.claim_total.toFixed(2)} {claim.currency}</td>
+                          <td>{receipt.receipt_total.toFixed(2)} {receipt.currency}</td>
                           <td>
-                            <span className={riskChipClass(claim.risk_level)}>{claim.risk_level || 'Unscored'}</span>
-                            <p>{(claim.risk_score || 0).toFixed(1)} pts</p>
-                          </td>
-                          <td>
-                            <span className={priorityChipClass(claim.case_priority)}>{claim.case_priority || 'standard'}</span>
-                            <p>{claim.case_owner_id || 'Unassigned'}</p>
-                            <p>{claim.case_sla_due_at ? `SLA ${dayjs(claim.case_sla_due_at).format('DD MMM HH:mm')}` : 'No SLA'}</p>
-                            {claim.case_watchlist && <p>Watchlist</p>}
+                            <span className={riskChipClass(receipt.risk_level)}>{receipt.risk_level || 'Unscored'}</span>
+                            <p>{(receipt.risk_score || 0).toFixed(1)} pts</p>
                           </td>
                           <td>
-                            <p>Detections: {claim.detection_count}</p>
-                            <p>{claim.primary_red_flag ? formatDetectionType(claim.primary_red_flag) : '-'}</p>
+                            <span className={priorityChipClass(receipt.case_priority)}>{receipt.case_priority || 'standard'}</span>
+                            <p>{receipt.case_owner_id || 'Unassigned'}</p>
+                            <p>{receipt.case_sla_due_at ? `SLA ${dayjs(receipt.case_sla_due_at).format('DD MMM HH:mm')}` : 'No SLA'}</p>
+                            {receipt.case_watchlist && <p>Watchlist</p>}
                           </td>
-                          <td>{dayjs(claim.created_at).format('DD MMM YYYY HH:mm')}</td>
+                          <td>
+                            <p>Detections: {receipt.detection_count}</p>
+                            <p>{receipt.primary_red_flag ? formatDetectionType(receipt.primary_red_flag) : '-'}</p>
+                          </td>
+                          <td>{dayjs(receipt.created_at).format('DD MMM YYYY HH:mm')}</td>
                           <td>
                             <div className="actions-inline">
-                              <button className="small-btn" onClick={() => navigate(`/claims/${claim.claim_id}/analysis`)}>
+                              <button className="small-btn" onClick={() => navigate(`/receipts/${receipt.receipt_id}/analysis`)}>
                                 <span className="btn-inline"><DocumentIcon size={13} />Open</span>
                               </button>
-                              <button className="small-btn" onClick={() => handleAnalyzeAndOpen(claim.claim_id)} disabled={analyzingId === claim.claim_id}>
-                                <span className="btn-inline"><AnalyzeIcon size={13} />{analyzingId === claim.claim_id ? 'Analyzing...' : 'Analyze'}</span>
+                              <button className="small-btn" onClick={() => handleAnalyzeAndOpen(receipt.receipt_id)} disabled={analyzingId === receipt.receipt_id}>
+                                <span className="btn-inline"><AnalyzeIcon size={13} />{analyzingId === receipt.receipt_id ? 'Analyzing...' : 'Analyze'}</span>
                               </button>
                             </div>
                           </td>

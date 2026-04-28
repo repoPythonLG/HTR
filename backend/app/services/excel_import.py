@@ -212,7 +212,7 @@ def _build_claim_payload(row: Dict[str, Any], row_number: int, source_name: str)
         f"Trip Duration Days: {trip_duration_days or '-'}",
         f"Expense Type: {expense_type or '-'}",
         f"Expense Amount in SAR: {claim_total:.2f}",
-        f"Receipt no: {receipt_number}",
+        f"Entry no: {receipt_number}",
         f"Merchant: {merchant}",
         f"Booking channel: {booking_channel}",
         f"Flight class: {flight_class}",
@@ -274,7 +274,7 @@ def _build_claim_payload(row: Dict[str, Any], row_number: int, source_name: str)
         "document": {
             "file_name": f"{source_name}-row-{row_number}.txt",
             "text": "\n".join(evidence_lines),
-            "document_type": "travel_claim_register",
+            "document_type": "travel_expense_register",
             "mime_type": "application/x-structured-claim",
             "fields": extracted_fields,
         },

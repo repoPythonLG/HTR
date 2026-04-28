@@ -227,7 +227,7 @@ def evaluate_claim(db: Session, claim: Claim, documents: list[ReceiptDocument], 
             candidates.append(
                 DetectionCandidate(
                     detection_type="duplicate_receipt",
-                    reason="Receipt identifier appears in another claim, suggesting duplicate submission.",
+                    reason="Entry identifier appears in another travel expense entry, suggesting duplicate submission.",
                     supporting_facts={
                         "receipt_numbers": receipt_ids,
                         "related_claims": list({row.claim_id for row in duplicate_hits}),
@@ -235,7 +235,7 @@ def evaluate_claim(db: Session, claim: Claim, documents: list[ReceiptDocument], 
                     source_references={"related_document_ids": list({row.document_id for row in duplicate_hits})},
                     policy_reference="duplicate_receipt_check",
                     confidence_score=0.92,
-                    recommended_action="Validate original receipt",
+                    recommended_action="Validate original entry",
                 )
             )
 
@@ -252,7 +252,7 @@ def evaluate_claim(db: Session, claim: Claim, documents: list[ReceiptDocument], 
                 candidates.append(
                     DetectionCandidate(
                         detection_type="hotel_above_benchmark",
-                        reason="Hotel room rate exceeds policy benchmark threshold for the destination city.",
+                        reason="Accommodation rate exceeds the policy benchmark threshold for the destination city.",
                         supporting_facts={
                             "city": city,
                             "observed_room_rate": observed,
@@ -274,7 +274,7 @@ def evaluate_claim(db: Session, claim: Claim, documents: list[ReceiptDocument], 
         candidates.append(
             DetectionCandidate(
                 detection_type="near_approval_threshold",
-                reason="Claim total is just below the extra-approval threshold.",
+                reason="Travel expense entry total is just below the extra-approval threshold.",
                 supporting_facts={
                     "claim_total": claim.claim_total,
                     "approval_threshold": approval_threshold,
@@ -309,7 +309,7 @@ def evaluate_claim(db: Session, claim: Claim, documents: list[ReceiptDocument], 
         candidates.append(
             DetectionCandidate(
                 detection_type="meal_double_claim",
-                reason="Meal receipt submitted while hotel evidence indicates meals are already included.",
+                reason="Meal expense entry submitted while supporting evidence indicates meals are already included.",
                 supporting_facts={"meal_receipt_present": True, "hotel_meal_included_indicator": True},
                 source_references={"document_types": [doc.document_type for doc in documents]},
                 policy_reference="meal_double_claim_policy",
@@ -363,7 +363,7 @@ def evaluate_claim(db: Session, claim: Claim, documents: list[ReceiptDocument], 
             candidates.append(
                 DetectionCandidate(
                     detection_type="overlapping_trips",
-                    reason="Trip dates overlap with another claim from the same employee.",
+                    reason="Trip dates overlap with another travel expense entry from the same employee.",
                     supporting_facts={"overlapping_claim_ids": [row.claim_id for row in overlaps]},
                     source_references={"employee_id": claim.employee_id},
                     policy_reference="trip_overlap_rule",
@@ -467,7 +467,7 @@ def evaluate_claim(db: Session, claim: Claim, documents: list[ReceiptDocument], 
             candidates.append(
                 DetectionCandidate(
                     detection_type="amount_outlier_abnormality",
-                    reason="Claim amount is statistically outside the normal peer distribution for similar trips.",
+                    reason="Travel expense entry amount is statistically outside the normal peer distribution for similar trips.",
                     supporting_facts={
                         "claim_amount": round(claim.claim_total, 2),
                         "peer_group": peer_group,
@@ -479,7 +479,7 @@ def evaluate_claim(db: Session, claim: Claim, documents: list[ReceiptDocument], 
                         "z_score": round(z_score, 3),
                         "robust_z_score": round(robust_z, 3),
                     },
-                    source_references={"entity": "claims"},
+                    source_references={"entity": "travel expense entries"},
                     policy_reference="outlier_min_sample_size",
                     confidence_score=0.86,
                     recommended_action="Review and request justification",
@@ -505,7 +505,7 @@ def evaluate_claim(db: Session, claim: Claim, documents: list[ReceiptDocument], 
                 candidates.append(
                     DetectionCandidate(
                         detection_type="trip_duration_outlier_abnormality",
-                        reason="Trip duration is outside the normal duration pattern for peer claims.",
+                        reason="Trip duration is outside the normal duration pattern for peer travel expense entries.",
                         supporting_facts={
                             "trip_duration_days": current_duration,
                             "peer_group": peer_group,
@@ -514,7 +514,7 @@ def evaluate_claim(db: Session, claim: Claim, documents: list[ReceiptDocument], 
                             "peer_duration_iqr_upper": round(duration_upper, 2),
                             "robust_z_score": round(duration_robust_z, 3),
                         },
-                        source_references={"entity": "claims"},
+                        source_references={"entity": "travel expense entries"},
                         policy_reference="outlier_min_sample_size",
                         confidence_score=0.8,
                         recommended_action="Review travel details",
@@ -529,7 +529,7 @@ def evaluate_claim(db: Session, claim: Claim, documents: list[ReceiptDocument], 
             candidates.append(
                 DetectionCandidate(
                     detection_type="amount_above_peer_mean_threshold",
-                    reason="Claim amount exceeds the configured threshold above the peer mean.",
+                    reason="Travel expense entry amount exceeds the configured threshold above the peer mean.",
                     supporting_facts={
                         "claim_amount": round(claim.claim_total, 2),
                         "peer_group": peer_group,
@@ -539,7 +539,7 @@ def evaluate_claim(db: Session, claim: Claim, documents: list[ReceiptDocument], 
                         "threshold_amount": round(threshold_value, 2),
                         "uplift_vs_mean_pct": round(uplift_pct, 2),
                     },
-                    source_references={"entity": "claims"},
+                    source_references={"entity": "travel expense entries"},
                     policy_reference="mean_threshold_pct",
                     confidence_score=0.88,
                     recommended_action="Review variance and supporting evidence",
@@ -558,7 +558,7 @@ def evaluate_claim(db: Session, claim: Claim, documents: list[ReceiptDocument], 
             candidates.append(
                 DetectionCandidate(
                     detection_type="location_cost_anomaly",
-                    reason="Claim amount exceeds the location-adjusted peer expectation for destination city/country.",
+                    reason="Travel expense entry amount exceeds the location-adjusted peer expectation for destination city/country.",
                     supporting_facts={
                         "claim_amount": round(claim.claim_total, 2),
                         "destination_country": claim.to_country,
@@ -574,7 +574,7 @@ def evaluate_claim(db: Session, claim: Claim, documents: list[ReceiptDocument], 
                         "location_adjusted_threshold_amount": round(normalized_threshold_value, 2),
                         "uplift_vs_location_adjusted_mean_pct": round(uplift_pct, 2),
                     },
-                    source_references={"entity": "claims"},
+                    source_references={"entity": "travel expense entries"},
                     policy_reference="location_adjusted_threshold_pct",
                     confidence_score=0.87,
                     recommended_action="Review amount relative to destination cost index",

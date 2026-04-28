@@ -1,7 +1,7 @@
 import dayjs from 'dayjs'
 import { useEffect, useMemo, useState } from 'react'
 import { fetchEmployeeRiskDashboard } from '../api/client'
-import { AnalyzeIcon, ClaimsIcon, EmployeeIcon, RiskIcon, UsersIcon, WrongClaimIcon } from '../components/BrandIcons'
+import { AnalyzeIcon, ReceiptsIcon, EmployeeIcon, RiskIcon, UsersIcon, WrongClaimIcon } from '../components/BrandIcons'
 import { CollapsiblePanel } from '../components/CollapsiblePanel'
 import { PageTabs } from '../components/PageTabs'
 import { EmployeeRiskDashboard, EmployeeRiskProfile } from '../types'
@@ -149,19 +149,19 @@ function SpotlightCard({
 }
 
 function byViolation(a: EmployeeRiskProfile, b: EmployeeRiskProfile) {
-  if (b.flagged_claims !== a.flagged_claims) return b.flagged_claims - a.flagged_claims
+  if (b.flagged_receipts !== a.flagged_receipts) return b.flagged_receipts - a.flagged_receipts
   if (b.violation_rate_pct !== a.violation_rate_pct) return b.violation_rate_pct - a.violation_rate_pct
   return b.risk_index - a.risk_index
 }
 
 function bySpend(a: EmployeeRiskProfile, b: EmployeeRiskProfile) {
   if (b.total_spend !== a.total_spend) return b.total_spend - a.total_spend
-  return b.total_claims - a.total_claims
+  return b.total_receipts - a.total_receipts
 }
 
 function byRisk(a: EmployeeRiskProfile, b: EmployeeRiskProfile) {
   if (b.risk_index !== a.risk_index) return b.risk_index - a.risk_index
-  return b.flagged_claims - a.flagged_claims
+  return b.flagged_receipts - a.flagged_receipts
 }
 
 export function EmployeeRiskInsightsPage() {
@@ -208,7 +208,7 @@ export function EmployeeRiskInsightsPage() {
   const topSpendEmployees = useMemo(() => [...filteredEmployees].sort(bySpend).slice(0, 8), [filteredEmployees])
   const topRiskEmployees = useMemo(() => [...filteredEmployees].sort(byRisk).slice(0, 8), [filteredEmployees])
 
-  const maxViolationCount = Math.max(1, ...topViolationEmployees.map((item) => item.flagged_claims))
+  const maxViolationCount = Math.max(1, ...topViolationEmployees.map((item) => item.flagged_receipts))
   const maxSpend = Math.max(1, ...topSpendEmployees.map((item) => item.total_spend))
   const maxRiskIndex = Math.max(1, ...topRiskEmployees.map((item) => item.risk_index))
 
@@ -219,8 +219,8 @@ export function EmployeeRiskInsightsPage() {
   if (error) return <div className="error-box">{error}</div>
   if (!dashboard) return <div className="panel">Loading employee risk insights...</div>
 
-  const portfolioViolationRate = dashboard.total_claims > 0
-    ? (dashboard.flagged_claims / dashboard.total_claims) * 100
+  const portfolioViolationRate = dashboard.total_receipts > 0
+    ? (dashboard.flagged_receipts / dashboard.total_receipts) * 100
     : 0
   const highRiskEmployeeRate = dashboard.total_employees > 0
     ? (dashboard.high_risk_employees / dashboard.total_employees) * 100
@@ -254,7 +254,7 @@ export function EmployeeRiskInsightsPage() {
                     <RiskMeter
                       value={portfolioViolationRate}
                       label="Portfolio Violation Rate"
-                      detail={`${dashboard.flagged_claims} flagged claims across ${dashboard.total_claims} claims`}
+                      detail={`${dashboard.flagged_receipts} flagged entries across ${dashboard.total_receipts} entries`}
                     />
                     <RiskMeter
                       value={highRiskEmployeeRate}
@@ -279,8 +279,8 @@ export function EmployeeRiskInsightsPage() {
                     title="Most Violations"
                     subtitle="Policy breaches"
                     profile={spotlightViolation}
-                    metricLabel="Flagged Claims"
-                    metricValue={spotlightViolation ? `${spotlightViolation.flagged_claims}` : '-'}
+                    metricLabel="Flagged Entries"
+                    metricValue={spotlightViolation ? `${spotlightViolation.flagged_receipts}` : '-'}
                     tone={spotlightViolation ? toneForRisk(spotlightViolation.employee_risk_level) : 'low'}
                     detail={spotlightViolation ? `Violation rate ${spotlightViolation.violation_rate_pct}% · Top detection ${formatDetectionType(spotlightViolation.top_detection_type)}` : '-'}
                   />
@@ -292,7 +292,7 @@ export function EmployeeRiskInsightsPage() {
                     metricLabel="Total Spend (SAR)"
                     metricValue={spotlightSpend ? currencyFormatter.format(spotlightSpend.total_spend) : '-'}
                     tone={spotlightSpend ? toneForRisk(spotlightSpend.employee_risk_level) : 'low'}
-                    detail={spotlightSpend ? `Average claim ${currencyFormatter.format(spotlightSpend.avg_claim_amount)} · ${spotlightSpend.total_claims} claims` : '-'}
+                    detail={spotlightSpend ? `Average entry ${currencyFormatter.format(spotlightSpend.avg_receipt_amount)} · ${spotlightSpend.total_receipts} entries` : '-'}
                   />
                 </CollapsiblePanel>
 
@@ -303,28 +303,28 @@ export function EmployeeRiskInsightsPage() {
             <strong>{integerFormatter.format(dashboard.total_employees)}</strong>
           </article>
           <article className="metric-card">
-            <div className="metric-line"><span>Total Claims</span><ClaimsIcon className="metric-icon" /></div>
-            <strong>{integerFormatter.format(dashboard.total_claims)}</strong>
+            <div className="metric-line"><span>Total Entries</span><ReceiptsIcon className="metric-icon" /></div>
+            <strong>{integerFormatter.format(dashboard.total_receipts)}</strong>
           </article>
           <article className="metric-card">
-            <div className="metric-line"><span>Flagged Claims</span><WrongClaimIcon className="metric-icon" /></div>
-            <strong>{integerFormatter.format(dashboard.flagged_claims)}</strong>
+            <div className="metric-line"><span>Flagged Entries</span><WrongClaimIcon className="metric-icon" /></div>
+            <strong>{integerFormatter.format(dashboard.flagged_receipts)}</strong>
           </article>
           <article className="metric-card">
-            <div className="metric-line"><span>Suspicious Claims</span><RiskIcon className="metric-icon" /></div>
-            <strong>{integerFormatter.format(dashboard.suspicious_claims)}</strong>
+            <div className="metric-line"><span>Suspicious Entries</span><RiskIcon className="metric-icon" /></div>
+            <strong>{integerFormatter.format(dashboard.suspicious_receipts)}</strong>
           </article>
           <article className="metric-card">
-            <div className="metric-line"><span>Total Spend (SAR)</span><ClaimsIcon className="metric-icon" /></div>
+            <div className="metric-line"><span>Total Spend (SAR)</span><ReceiptsIcon className="metric-icon" /></div>
             <strong>{currencyFormatter.format(dashboard.total_spend)}</strong>
           </article>
           <article className="metric-card">
-            <div className="metric-line"><span>Average Claim (SAR)</span><AnalyzeIcon className="metric-icon" /></div>
-            <strong>{currencyFormatter.format(dashboard.avg_claim_amount)}</strong>
+            <div className="metric-line"><span>Average Entry (SAR)</span><AnalyzeIcon className="metric-icon" /></div>
+            <strong>{currencyFormatter.format(dashboard.avg_receipt_amount)}</strong>
           </article>
           <article className="metric-card">
-            <div className="metric-line"><span>Average Claims / Employee</span><EmployeeIcon className="metric-icon" /></div>
-            <strong>{dashboard.avg_claims_per_employee}</strong>
+            <div className="metric-line"><span>Average Entries / Employee</span><EmployeeIcon className="metric-icon" /></div>
+            <strong>{dashboard.avg_receipts_per_employee}</strong>
           </article>
           <article className="metric-card">
             <div className="metric-line"><span>Average Trip Duration</span><AnalyzeIcon className="metric-icon" /></div>
@@ -383,10 +383,10 @@ export function EmployeeRiskInsightsPage() {
             <ChartBarRow
               key={`viol-${employee.employee_id}`}
               label={`${employee.employee_name} (${employee.employee_id})`}
-              value={employee.flagged_claims}
+              value={employee.flagged_receipts}
               max={maxViolationCount}
               tone="critical"
-              detail={`${employee.flagged_claims} flagged (${employee.violation_rate_pct}%)`}
+              detail={`${employee.flagged_receipts} flagged (${employee.violation_rate_pct}%)`}
               rank={index + 1}
             />
           ))}
@@ -465,18 +465,18 @@ export function EmployeeRiskInsightsPage() {
                 <th>Department</th>
                 <th>Risk Level</th>
                 <th>Risk Index</th>
-                <th>Claims</th>
+                <th>Entries</th>
                 <th>Flagged</th>
                 <th>Suspicious</th>
                 <th>Incorrect</th>
                 <th>Total Spend (SAR)</th>
-                <th>Avg Claim</th>
+                <th>Avg Entry</th>
                 <th>Avg Trip Days</th>
                 <th>Avg Risk Score</th>
                 <th>Detections</th>
                 <th>Top Detection</th>
                 <th>Top Destination</th>
-                <th>Last Claim</th>
+                <th>Last Entry</th>
               </tr>
             </thead>
             <tbody>
@@ -495,18 +495,18 @@ export function EmployeeRiskInsightsPage() {
                   <td>{employee.department}</td>
                   <td><span className={riskChipClass(employee.employee_risk_level)}>{employee.employee_risk_level}</span></td>
                   <td>{employee.risk_index}</td>
-                  <td>{employee.total_claims}</td>
-                  <td>{employee.flagged_claims} ({employee.violation_rate_pct}%)</td>
-                  <td>{employee.suspicious_claims} ({employee.suspicious_rate_pct}%)</td>
-                  <td>{employee.incorrect_claims} ({employee.incorrect_rate_pct}%)</td>
+                  <td>{employee.total_receipts}</td>
+                  <td>{employee.flagged_receipts} ({employee.violation_rate_pct}%)</td>
+                  <td>{employee.suspicious_receipts} ({employee.suspicious_rate_pct}%)</td>
+                  <td>{employee.incorrect_receipts} ({employee.incorrect_rate_pct}%)</td>
                   <td>{currencyFormatter.format(employee.total_spend)}</td>
-                  <td>{currencyFormatter.format(employee.avg_claim_amount)}</td>
+                  <td>{currencyFormatter.format(employee.avg_receipt_amount)}</td>
                   <td>{employee.avg_trip_duration_days}</td>
                   <td>{employee.avg_risk_score}</td>
                   <td>{employee.total_detections}</td>
                   <td>{employee.top_detection_type ? `${formatDetectionType(employee.top_detection_type)} (${employee.top_detection_count})` : '-'}</td>
                   <td>{employee.top_destination_city || '-'}</td>
-                  <td>{employee.last_claim_at ? dayjs(employee.last_claim_at).format('DD MMM YYYY') : '-'}</td>
+                  <td>{employee.last_receipt_at ? dayjs(employee.last_receipt_at).format('DD MMM YYYY') : '-'}</td>
                 </tr>
               ))}
             </tbody>

@@ -1,9 +1,9 @@
 import axios from 'axios'
 import {
-  AuthToken,
   CaseManagement,
   CaseManagementPayload,
   CaseTimeline,
+  ClaimListResponse,
   ClaimAnalysis,
   ClaimDetail,
   ClaimSummary,
@@ -17,74 +17,191 @@ import {
   ModelGovernance,
   PolicyRule,
   RiskSettings,
-  SpreadsheetPreview
+  SpreadsheetPreview,
+  UserRole
 } from '../types'
 
-const TOKEN_KEY = 'sabic_claims_access_token'
+const DEMO_ROLE_KEY = 'sabic_travel_expenses_demo_role'
+const DEMO_ROLES: UserRole[] = ['employee', 'reviewer', 'administrator']
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE ?? 'http://localhost:8000/api/v1'
 })
 
 api.interceptors.request.use((config) => {
-  const token = getStoredToken()
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
+  config.headers['X-Demo-Role'] = getStoredDemoRole()
   return config
 })
 
-export function getStoredToken(): string | null {
-  return window.localStorage.getItem(TOKEN_KEY)
+export function getStoredDemoRole(): UserRole {
+  const stored = window.localStorage.getItem(DEMO_ROLE_KEY)
+  return DEMO_ROLES.includes(stored as UserRole) ? (stored as UserRole) : 'reviewer'
 }
 
-export function setStoredToken(token: string | null) {
-  if (!token) {
-    window.localStorage.removeItem(TOKEN_KEY)
-    return
+export function setStoredDemoRole(role: UserRole) {
+  window.localStorage.setItem(DEMO_ROLE_KEY, role)
+}
+
+function withReceiptAliases<T extends { claim_id: string; claim_total: number }>(row: T): T & {
+  receipt_id: string
+  receipt_total: number
+} {
+  return {
+    ...row,
+    receipt_id: row.claim_id,
+    receipt_total: row.claim_total
   }
-  window.localStorage.setItem(TOKEN_KEY, token)
 }
 
-export async function login(username: string, password: string): Promise<AuthToken> {
-  const body = new URLSearchParams()
-  body.set('username', username)
-  body.set('password', password)
-
-  const response = await api.post<AuthToken>('/auth/login', body.toString(), {
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-  })
-  return response.data
+function withAnalysisAliases<T extends { claim_id: string }>(row: T): T & { receipt_id: string } {
+  return {
+    ...row,
+    receipt_id: row.claim_id
+  }
 }
 
-export async function fetchCurrentUser(): Promise<CurrentUser> {
-  const response = await api.get<CurrentUser>('/auth/me')
-  return response.data
+function withExecutiveAliases(data: ExecutiveDashboard): ExecutiveDashboard {
+  return {
+    ...data,
+    total_receipts: data.total_claims,
+    analyzed_receipts: data.analyzed_claims,
+    suspicious_receipts: data.suspicious_claims,
+    wrong_receipts: data.wrong_claims,
+    wrong_receipt_rate_pct: data.wrong_claim_rate_pct
+  }
+}
+
+function withEmployeeDashboardAliases(data: EmployeeDashboard): EmployeeDashboard {
+  return {
+    ...data,
+    total_receipts: data.total_claims,
+    pending_receipts: data.pending_claims,
+    analyzed_receipts: data.analyzed_claims,
+    suspicious_receipts: data.suspicious_claims,
+    recent_receipts: data.recent_claims.map(withReceiptAliases)
+  }
+}
+
+function withEmployeeRiskAliases(data: EmployeeRiskDashboard): EmployeeRiskDashboard {
+  const employees = data.employees.map((employee) => ({
+    ...employee,
+    total_receipts: employee.total_claims,
+    analyzed_receipts: employee.analyzed_claims,
+    suspicious_receipts: employee.suspicious_claims,
+    incorrect_receipts: employee.incorrect_claims,
+    flagged_receipts: employee.flagged_claims,
+    avg_receipt_amount: employee.avg_claim_amount,
+    last_receipt_at: employee.last_claim_at
+  }))
+
+  return {
+    ...data,
+    total_receipts: data.total_claims,
+    analyzed_receipts: data.analyzed_claims,
+    suspicious_receipts: data.suspicious_claims,
+    incorrect_receipts: data.incorrect_claims,
+    flagged_receipts: data.flagged_claims,
+    avg_receipt_amount: data.avg_claim_amount,
+    avg_receipts_per_employee: data.avg_claims_per_employee,
+    employees
+  }
+}
+
+function toApiMetric(metric?: string) {
+  if (metric === 'receipt_total') return 'claim_total'
+  if (metric === 'location_adjusted_receipt_total') return 'location_adjusted_claim_total'
+  return metric
+}
+
+function toUiMetric(metric?: string) {
+  if (metric === 'claim_total') return 'receipt_total'
+  if (metric === 'location_adjusted_claim_total') return 'location_adjusted_receipt_total'
+  return metric
+}
+
+function receiptLabel(label: string) {
+  return label
+    .replace(/Location-Adjusted Claim Amount/g, 'Location-Adjusted Travel Expense Amount')
+    .replace(/Claim Amount/g, 'Travel Expense Amount')
+    .replace(/\bClaims\b/g, 'Travel Expense Entries')
+    .replace(/\bclaims\b/g, 'travel expense entries')
+    .replace(/\bClaim\b/g, 'Travel Expense Entry')
+    .replace(/\bclaim\b/g, 'travel expense entry')
+    .replace(/\bReceipts\b/g, 'Entries')
+    .replace(/\breceipts\b/g, 'entries')
+    .replace(/\bReceipt\b/g, 'Entry')
+    .replace(/\breceipt\b/g, 'entry')
 }
 
 export async function fetchClaims(params?: {
   status?: string
   queue?: 'all' | 'active' | 'history'
   suspiciousOnly?: boolean
+  riskLevel?: string
+  search?: string
+  sortBy?: string
+  limit?: number
+  offset?: number
 }): Promise<ClaimSummary[]> {
-  const response = await api.get<ClaimSummary[]>('/claims', {
+  const page = await fetchClaimPage({
+    ...params,
+    limit: params?.limit ?? 1000,
+    offset: params?.offset ?? 0
+  })
+  return page.items
+}
+
+export async function fetchClaimPage(params?: {
+  status?: string
+  queue?: 'all' | 'active' | 'history'
+  suspiciousOnly?: boolean
+  riskLevel?: string
+  search?: string
+  sortBy?: string
+  limit?: number
+  offset?: number
+}): Promise<ClaimListResponse> {
+  const response = await api.get<ClaimListResponse>('/claims', {
     params: {
       status: params?.status,
       queue: params?.queue,
-      suspicious_only: params?.suspiciousOnly || undefined
+      suspicious_only: params?.suspiciousOnly || undefined,
+      risk_level: params?.riskLevel || undefined,
+      search: params?.search || undefined,
+      sort_by: params?.sortBy || undefined,
+      limit: params?.limit,
+      offset: params?.offset
     }
   })
-  return response.data
+  return {
+    ...response.data,
+    items: response.data.items.map(withReceiptAliases)
+  }
+}
+
+export async function fetchReceipts(params?: Parameters<typeof fetchClaims>[0]): Promise<ClaimSummary[]> {
+  return fetchClaims(params)
+}
+
+export async function fetchReceiptPage(params?: Parameters<typeof fetchClaimPage>[0]): Promise<ClaimListResponse> {
+  return fetchClaimPage(params)
 }
 
 export async function fetchClaimDetail(claimId: string): Promise<ClaimDetail> {
   const response = await api.get<ClaimDetail>(`/claims/${claimId}`)
-  return response.data
+  return withReceiptAliases(response.data)
 }
 
 export async function fetchClaimAnalysis(claimId: string): Promise<ClaimAnalysis> {
   const response = await api.get<ClaimAnalysis>(`/claims/${claimId}/analysis`)
-  return response.data
+  const data = withAnalysisAliases(response.data)
+  return {
+    ...data,
+    evidence_summary: data.evidence_summary.map((evidence) => ({
+      ...evidence,
+      related_records: evidence.related_records?.map(withReceiptAliases)
+    }))
+  }
 }
 
 export async function fetchCaseTimeline(claimId: string): Promise<CaseTimeline> {
@@ -107,7 +224,8 @@ export async function uploadClaimPack(form: {
   start_date?: string
   end_date?: string
   destination_city?: string
-  claim_total: string
+  claim_total?: string
+  receipt_total?: string
   currency: string
   files: File[]
 }) {
@@ -115,7 +233,7 @@ export async function uploadClaimPack(form: {
   multipart.append('employee_id', form.employee_id)
   multipart.append('employee_name', form.employee_name)
   multipart.append('department', form.department)
-  multipart.append('claim_total', form.claim_total)
+  multipart.append('claim_total', form.claim_total ?? form.receipt_total ?? '')
   multipart.append('currency', form.currency)
   if (form.start_date) multipart.append('start_date', form.start_date)
   if (form.end_date) multipart.append('end_date', form.end_date)
@@ -127,18 +245,44 @@ export async function uploadClaimPack(form: {
   const response = await api.post('/claims/upload', multipart, {
     headers: { 'Content-Type': 'multipart/form-data' }
   })
-  return response.data as { claim_id: string; status: string; document_count: number }
+  const data = response.data as { claim_id: string; status: string; document_count: number }
+  return { ...data, receipt_id: data.claim_id }
 }
 
-export async function importClaimsFromExcel(file: File, autoAnalyze = true): Promise<ExcelImportResult> {
+export async function importClaimsFromExcel(
+  file: File,
+  autoAnalyze = true,
+  onProgress?: (percent: number) => void
+): Promise<ExcelImportResult> {
   const form = new FormData()
   form.append('file', file)
   form.append('auto_analyze', String(autoAnalyze))
 
   const response = await api.post<ExcelImportResult>('/claims/import-excel', form, {
-    headers: { 'Content-Type': 'multipart/form-data' }
+    headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: (event) => {
+      if (!onProgress) return
+      const total = event.total || file.size || 0
+      if (!total) {
+        onProgress(15)
+        return
+      }
+      onProgress(Math.min(100, Math.round((event.loaded / total) * 100)))
+    }
   })
-  return response.data
+  return {
+    ...response.data,
+    imported_receipts: response.data.imported_claims,
+    analyzed_receipts: response.data.analyzed_claims
+  }
+}
+
+export async function importReceiptsFromExcel(
+  file: File,
+  autoAnalyze = true,
+  onProgress?: (percent: number) => void
+): Promise<ExcelImportResult> {
+  return importClaimsFromExcel(file, autoAnalyze, onProgress)
 }
 
 export async function fetchActiveImport(): Promise<ActiveImport> {
@@ -171,24 +315,24 @@ export async function submitReviewAction(
 
 export async function fetchExecutiveDashboard(): Promise<ExecutiveDashboard> {
   const response = await api.get<ExecutiveDashboard>('/dashboards/executive')
-  return response.data
+  return withExecutiveAliases(response.data)
 }
 
 export async function fetchEmployeeDashboard(): Promise<EmployeeDashboard> {
   const response = await api.get<EmployeeDashboard>('/dashboards/employee')
-  return response.data
+  return withEmployeeDashboardAliases(response.data)
 }
 
 export async function fetchEmployeeRiskDashboard(): Promise<EmployeeRiskDashboard> {
   const response = await api.get<EmployeeRiskDashboard>('/dashboards/employee-risk')
-  return response.data
+  return withEmployeeRiskAliases(response.data)
 }
 
 export async function fetchOutlierMapDashboard(params?: { xMetric?: string; yMetric?: string }): Promise<OutlierMapDashboard> {
   const response = await api.get<OutlierMapDashboard>('/dashboards/outlier-map', {
     params: {
-      x_metric: params?.xMetric,
-      y_metric: params?.yMetric,
+      x_metric: toApiMetric(params?.xMetric),
+      y_metric: toApiMetric(params?.yMetric),
     }
   })
   const data = response.data as unknown as Record<string, unknown>
@@ -199,8 +343,8 @@ export async function fetchOutlierMapDashboard(params?: { xMetric?: string; yMet
     .map((item) => {
       const row = item as Record<string, unknown>
       return {
-        key: String(row.key ?? ''),
-        label: String(row.label ?? row.key ?? ''),
+        key: String(toUiMetric(String(row.key ?? '')) ?? ''),
+        label: receiptLabel(String(row.label ?? row.key ?? '')),
       }
     })
     .filter((item) => item.key)
@@ -227,6 +371,7 @@ export async function fetchOutlierMapDashboard(params?: { xMetric?: string; yMet
       const reasonsRaw = Array.isArray(row.outlier_reasons) ? row.outlier_reasons : []
       return {
         claim_id: String(row.claim_id ?? ''),
+        receipt_id: String(row.claim_id ?? ''),
         employee_id: String(row.employee_id ?? ''),
         employee_name: String(row.employee_name ?? ''),
         department: String(row.department ?? ''),
@@ -251,10 +396,10 @@ export async function fetchOutlierMapDashboard(params?: { xMetric?: string; yMet
     .filter((item) => item.claim_id)
 
   return {
-    x_metric: String(data.x_metric ?? params?.xMetric ?? 'claim_total'),
-    y_metric: String(data.y_metric ?? params?.yMetric ?? 'trip_duration_days'),
-    x_label: String(data.x_label ?? 'X Axis'),
-    y_label: String(data.y_label ?? 'Y Axis'),
+    x_metric: String(toUiMetric(String(data.x_metric ?? params?.xMetric ?? 'claim_total'))),
+    y_metric: String(toUiMetric(String(data.y_metric ?? params?.yMetric ?? 'trip_duration_days'))),
+    x_label: receiptLabel(String(data.x_label ?? 'X Axis')),
+    y_label: receiptLabel(String(data.y_label ?? 'Y Axis')),
     total_points: Number(data.total_points ?? 0),
     outlier_points: Number(data.outlier_points ?? 0),
     metric_options: metricOptions,
