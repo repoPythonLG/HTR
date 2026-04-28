@@ -62,10 +62,6 @@ export function AdvancedSectionsPage() {
         <div>
           <p className="eyebrow">Advanced Control Center</p>
           <h2>Specialist analytics and governance tools</h2>
-          <p>
-            The daily navigation is intentionally simple. Use this area when you need deeper investigation,
-            employee-level risk intelligence, historical audit records, or model governance evidence.
-          </p>
         </div>
         <div className="advanced-hero-badge">
           <AnalyzeIcon size={20} />

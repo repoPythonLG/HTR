@@ -221,10 +221,20 @@ export function DataIntakePage() {
                     <p>Use SABIC travel-register spreadsheets. New upload replaces the prior imported dataset.</p>
                     <form className="form-grid" onSubmit={handleExcelImport}>
                       <input
+                        id="bulk-spreadsheet-upload"
+                        className="file-input-hidden"
                         type="file"
                         accept=".xlsx,.xls,.csv"
                         onChange={(event) => setExcelFile(event.target.files?.[0] || null)}
                       />
+                      <label className={`upload-dropzone ${excelFile ? 'has-file' : ''}`} htmlFor="bulk-spreadsheet-upload">
+                        <span className="upload-dropzone-icon"><UploadIcon size={22} /></span>
+                        <span className="upload-dropzone-copy">
+                          <strong>{excelFile ? excelFile.name : 'Select spreadsheet file'}</strong>
+                          <small>{excelFile ? 'Ready to import and analyze' : 'Excel or CSV · .xlsx, .xls, .csv'}</small>
+                        </span>
+                        <span className="upload-dropzone-action">{excelFile ? 'Change file' : 'Browse file'}</span>
+                      </label>
                       <label className="checkbox-inline">
                         <input type="checkbox" checked={autoAnalyze} onChange={(e) => setAutoAnalyze(e.target.checked)} />
                         Analyze rows immediately after import
@@ -294,10 +304,24 @@ export function DataIntakePage() {
                       </label>
                     </div>
 
-                    <label>
-                      Attach Documents
-                      <input type="file" multiple onChange={(e) => setFiles(Array.from(e.target.files || []))} />
-                    </label>
+                    <div className="field-stack">
+                      <span className="field-label">Attach Documents</span>
+                      <input
+                        id="manual-documents-upload"
+                        className="file-input-hidden"
+                        type="file"
+                        multiple
+                        onChange={(e) => setFiles(Array.from(e.target.files || []))}
+                      />
+                      <label className={`upload-dropzone compact ${files.length > 0 ? 'has-file' : ''}`} htmlFor="manual-documents-upload">
+                        <span className="upload-dropzone-icon"><DocumentIcon size={20} /></span>
+                        <span className="upload-dropzone-copy">
+                          <strong>{files.length > 0 ? `${files.length} document${files.length === 1 ? '' : 's'} selected` : 'Attach supporting documents'}</strong>
+                          <small>{files.length > 0 ? files.map((file) => file.name).join(', ') : 'PDF, image, spreadsheet, or text evidence'}</small>
+                        </span>
+                        <span className="upload-dropzone-action">{files.length > 0 ? 'Change files' : 'Browse files'}</span>
+                      </label>
+                    </div>
 
                     <button type="submit"><span className="btn-inline"><UploadIcon size={14} />Upload Travel Expense Entry</span></button>
                   </form>

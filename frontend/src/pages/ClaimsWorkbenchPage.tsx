@@ -2,7 +2,7 @@ import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { analyzeClaim, fetchReceiptPage } from '../api/client'
-import { AnalyzeIcon, ReceiptsIcon, DocumentIcon, RefreshIcon, RiskIcon, WrongClaimIcon } from '../components/BrandIcons'
+import { AnalyzeIcon, ReceiptsIcon, RefreshIcon, RiskIcon, WrongClaimIcon } from '../components/BrandIcons'
 import { CollapsiblePanel } from '../components/CollapsiblePanel'
 import { PageTabs } from '../components/PageTabs'
 import { ClaimSummary } from '../types'
@@ -318,9 +318,6 @@ export function ClaimsWorkbenchPage() {
                           <td>{dayjs(receipt.created_at).format('DD MMM YYYY HH:mm')}</td>
                           <td>
                             <div className="actions-inline">
-                              <button className="small-btn" onClick={() => navigate(`/receipts/${receipt.receipt_id}/analysis`)}>
-                                <span className="btn-inline"><DocumentIcon size={13} />Open</span>
-                              </button>
                               <button className="small-btn" onClick={() => handleAnalyzeAndOpen(receipt.receipt_id)} disabled={analyzingId === receipt.receipt_id}>
                                 <span className="btn-inline"><AnalyzeIcon size={13} />{analyzingId === receipt.receipt_id ? 'Analyzing...' : 'Analyze'}</span>
                               </button>

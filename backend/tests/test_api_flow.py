@@ -37,6 +37,56 @@ def _upload_claim(
     return response.json()["claim_id"]
 
 
+def test_attach_preview_and_remove_receipt_evidence(client, auth_headers):
+    reviewer_headers = auth_headers["reviewer"]
+    claim_id = _upload_claim(
+        client,
+        reviewer_headers,
+        employee_id="EMP-777",
+        claim_total=2200,
+        city="Riyadh",
+        start_date="2026-03-01",
+        end_date="2026-03-03",
+        docs=[("source_entry.txt", "Entry no: CASE-777\nTotal: 2200")],
+    )
+
+    upload_response = client.post(
+        f"/api/v1/claims/{claim_id}/documents",
+        headers=reviewer_headers,
+        files=[
+            (
+                "files",
+                ("hotel_folio.txt", io.BytesIO(b"Hotel Folio\nReceipt no: HF-777\nTotal: 2200"), "text/plain"),
+            )
+        ],
+    )
+    assert upload_response.status_code == 200, upload_response.text
+    uploaded_document = upload_response.json()[0]
+    document_id = uploaded_document["document_id"]
+    assert uploaded_document["file_name"] == "hotel_folio.txt"
+
+    preview_response = client.get(f"/api/v1/claims/{claim_id}/documents/{document_id}", headers=reviewer_headers)
+    assert preview_response.status_code == 200, preview_response.text
+    assert b"Hotel Folio" in preview_response.content
+
+    detail_response = client.get(f"/api/v1/claims/{claim_id}", headers=reviewer_headers)
+    assert detail_response.status_code == 200
+    assert any(item["document_id"] == document_id for item in detail_response.json()["documents"])
+
+    delete_response = client.delete(f"/api/v1/claims/{claim_id}/documents/{document_id}", headers=reviewer_headers)
+    assert delete_response.status_code == 204, delete_response.text
+
+    detail_after_delete = client.get(f"/api/v1/claims/{claim_id}", headers=reviewer_headers)
+    assert detail_after_delete.status_code == 200
+    assert all(item["document_id"] != document_id for item in detail_after_delete.json()["documents"])
+
+    timeline_response = client.get(f"/api/v1/claims/{claim_id}/case-timeline", headers=reviewer_headers)
+    assert timeline_response.status_code == 200
+    event_types = {item["event_type"] for item in timeline_response.json()["events"]}
+    assert "source_document_upload" in event_types
+    assert "source_document_removed" in event_types
+
+
 def test_upload_analyze_and_review_flow(client, auth_headers):
     reviewer_headers = auth_headers["reviewer"]
 

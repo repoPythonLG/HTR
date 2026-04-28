@@ -1,12 +1,12 @@
 import dayjs from 'dayjs'
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, PointerEvent, useEffect, useRef, useState, WheelEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { fetchCaseTimeline, fetchClaimAnalysis, fetchClaimDetail, submitReviewAction, updateCaseManagement } from '../api/client'
-import { AnalyzeIcon, DocumentIcon, RiskIcon, UsersIcon, WrongClaimIcon } from '../components/BrandIcons'
+import { deleteClaimDocument, fetchCaseTimeline, fetchClaimAnalysis, fetchClaimDetail, getDocumentUrl, submitReviewAction, updateCaseManagement, uploadClaimDocuments } from '../api/client'
+import { AnalyzeIcon, DocumentIcon, RiskIcon, UploadIcon, UsersIcon, WrongClaimIcon } from '../components/BrandIcons'
 import { CollapsiblePanel } from '../components/CollapsiblePanel'
 import { PageTabs } from '../components/PageTabs'
 import { useAuth } from '../context/AuthContext'
-import { CasePriority, CaseTimeline, CaseTimelineEvent, ClaimAnalysis, ClaimDetail, ClaimSummary } from '../types'
+import { CasePriority, CaseTimeline, CaseTimelineEvent, ClaimAnalysis, ClaimDetail, ClaimSummary, DocumentRecord } from '../types'
 import { formatDetectionType } from '../utils/formatters'
 
 function severityClass(severity: string) {
@@ -79,6 +79,90 @@ function formatTripRange(start?: string | null, end?: string | null) {
 function formatMoney(value?: number | null, currency = 'SAR') {
   if (value === null || value === undefined || !Number.isFinite(value)) return '—'
   return `${value.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`
+}
+
+type DocumentPreviewKind = 'image' | 'pdf' | 'text' | 'spreadsheet' | 'other'
+
+type ViewerOffset = {
+  x: number
+  y: number
+}
+
+function documentPreviewKind(document: DocumentRecord): DocumentPreviewKind {
+  const mime = (document.mime_type || '').toLowerCase()
+  const fileName = document.file_name.toLowerCase()
+  if (mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg)$/.test(fileName)) return 'image'
+  if (mime.includes('pdf') || fileName.endsWith('.pdf')) return 'pdf'
+  if (mime.startsWith('text/') || /\.(txt|csv|json|log|md)$/.test(fileName)) return 'text'
+  if (/\.(xlsx|xls)$/.test(fileName)) return 'spreadsheet'
+  return 'other'
+}
+
+function documentKindLabel(document: DocumentRecord) {
+  const kind = documentPreviewKind(document)
+  if (kind === 'pdf') return 'PDF receipt'
+  if (kind === 'image') return 'Image receipt'
+  if (kind === 'text') return 'Text evidence'
+  if (kind === 'spreadsheet') return 'Spreadsheet evidence'
+  return 'Document evidence'
+}
+
+function DocumentPreview({
+  claimId,
+  document,
+  zoom = 1,
+  offset = { x: 0, y: 0 },
+  interactive = false,
+  isPanning = false,
+  onWheel,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp
+}: {
+  claimId: string
+  document: DocumentRecord
+  zoom?: number
+  offset?: ViewerOffset
+  interactive?: boolean
+  isPanning?: boolean
+  onWheel?: (event: WheelEvent<HTMLDivElement>) => void
+  onPointerDown?: (event: PointerEvent<HTMLDivElement>) => void
+  onPointerMove?: (event: PointerEvent<HTMLDivElement>) => void
+  onPointerUp?: (event: PointerEvent<HTMLDivElement>) => void
+}) {
+  const url = getDocumentUrl(claimId, document.document_id)
+  const kind = documentPreviewKind(document)
+  const transform = interactive
+    ? { transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})` }
+    : undefined
+
+  return (
+    <div
+      className={`document-preview-frame ${kind}${interactive ? ' is-interactive' : ''}${isPanning ? ' is-panning' : ''}`}
+      onWheel={onWheel}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+    >
+      <div className="document-preview-stage" style={transform}>
+        {kind === 'image' && (
+          <img src={url} alt={`Preview of ${document.file_name}`} draggable={false} />
+        )}
+        {(kind === 'pdf' || kind === 'text') && (
+          <iframe src={url} title={`Preview of ${document.file_name}`} />
+        )}
+        {(kind === 'spreadsheet' || kind === 'other') && (
+          <div className="document-preview-empty">
+            <DocumentIcon size={42} />
+            <strong>Preview is not available for this file type</strong>
+            <p>Open the original document to inspect it in the browser or a desktop viewer.</p>
+            <a href={url} target="_blank" rel="noreferrer" className="text-link">Open original</a>
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 
 function priorityChipClass(priority?: string | null) {
@@ -444,10 +528,21 @@ export function ClaimAnalysisPage() {
   const [activeEvidence, setActiveEvidence] = useState<ClaimAnalysis['evidence_summary'][number] | null>(null)
   const [activeTimelineEvent, setActiveTimelineEvent] = useState<CaseTimelineEvent | null>(null)
   const [activeRelatedRecord, setActiveRelatedRecord] = useState<ClaimSummary | null>(null)
+  const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null)
+  const [documentUploadFiles, setDocumentUploadFiles] = useState<File[]>([])
+  const [documentUploading, setDocumentUploading] = useState(false)
+  const [documentMessage, setDocumentMessage] = useState<string>()
+  const [documentError, setDocumentError] = useState<string>()
+  const [focusedDocument, setFocusedDocument] = useState<DocumentRecord | null>(null)
+  const [viewerZoom, setViewerZoom] = useState(1)
+  const [viewerOffset, setViewerOffset] = useState<ViewerOffset>({ x: 0, y: 0 })
+  const [isViewerPanning, setIsViewerPanning] = useState(false)
   const [submittingReview, setSubmittingReview] = useState(false)
   const [caseForm, setCaseForm] = useState<CaseFormState>(initialCaseForm)
   const [caseSaving, setCaseSaving] = useState(false)
   const [caseMessage, setCaseMessage] = useState<string>()
+  const documentInputRef = useRef<HTMLInputElement | null>(null)
+  const panStartRef = useRef<{ pointerId: number; x: number; y: number; offsetX: number; offsetY: number } | null>(null)
 
   const canReview = user?.role === 'reviewer' || user?.role === 'administrator'
 
@@ -478,17 +573,29 @@ export function ClaimAnalysisPage() {
   }, [activeReceiptId, user?.employee_code, user?.username])
 
   useEffect(() => {
-    if (!activeEvidence && !activeTimelineEvent && !activeRelatedRecord) return
+    if (!activeEvidence && !activeTimelineEvent && !activeRelatedRecord && !focusedDocument) return
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         setActiveEvidence(null)
         setActiveTimelineEvent(null)
         setActiveRelatedRecord(null)
+        setFocusedDocument(null)
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [activeEvidence, activeTimelineEvent, activeRelatedRecord])
+  }, [activeEvidence, activeTimelineEvent, activeRelatedRecord, focusedDocument])
+
+  useEffect(() => {
+    const documents = detail?.documents || []
+    if (!documents.length) {
+      if (activeDocumentId) setActiveDocumentId(null)
+      return
+    }
+    if (!activeDocumentId || !documents.some((document) => document.document_id === activeDocumentId)) {
+      setActiveDocumentId(documents[0].document_id)
+    }
+  }, [activeDocumentId, detail?.documents])
 
   useEffect(() => {
     if (!canReview) return
@@ -562,6 +669,105 @@ export function ClaimAnalysisPage() {
     }
   }
 
+  async function refreshWorkspace(selectDocumentId?: string | null) {
+    if (!activeReceiptId) return
+    const [detailResponse, timelineResponse] = await Promise.all([
+      fetchClaimDetail(activeReceiptId),
+      fetchCaseTimeline(activeReceiptId)
+    ])
+    setDetail(detailResponse)
+    setTimeline(timelineResponse)
+    if (selectDocumentId !== undefined) {
+      setActiveDocumentId(selectDocumentId)
+    } else if (!detailResponse.documents.some((document) => document.document_id === activeDocumentId)) {
+      setActiveDocumentId(detailResponse.documents[0]?.document_id ?? null)
+    }
+  }
+
+  async function handleDocumentUpload(event: FormEvent) {
+    event.preventDefault()
+    if (!activeReceiptId || !documentUploadFiles.length) return
+
+    setDocumentUploading(true)
+    setDocumentMessage(undefined)
+    setDocumentError(undefined)
+    try {
+      const uploaded = await uploadClaimDocuments(activeReceiptId, documentUploadFiles)
+      await refreshWorkspace(uploaded[0]?.document_id ?? null)
+      setDocumentUploadFiles([])
+      if (documentInputRef.current) documentInputRef.current.value = ''
+      setDocumentMessage(`${uploaded.length} receipt evidence file${uploaded.length === 1 ? '' : 's'} uploaded and stored in the case file.`)
+    } catch (err) {
+      setDocumentError(String(err))
+    } finally {
+      setDocumentUploading(false)
+    }
+  }
+
+  async function handleDocumentDelete(document: DocumentRecord) {
+    if (!activeReceiptId) return
+    const confirmed = window.confirm(`Remove ${document.file_name} from this case file?`)
+    if (!confirmed) return
+
+    setDocumentMessage(undefined)
+    setDocumentError(undefined)
+    try {
+      await deleteClaimDocument(activeReceiptId, document.document_id)
+      const nextDocumentId = detail?.documents.find((item) => item.document_id !== document.document_id)?.document_id ?? null
+      await refreshWorkspace(nextDocumentId)
+      setDocumentMessage(`${document.file_name} was removed from the case file.`)
+    } catch (err) {
+      setDocumentError(String(err))
+    }
+  }
+
+  function openFocusedDocument(document: DocumentRecord) {
+    setFocusedDocument(document)
+    setViewerZoom(1)
+    setViewerOffset({ x: 0, y: 0 })
+    setIsViewerPanning(false)
+    panStartRef.current = null
+  }
+
+  function handleViewerWheel(event: WheelEvent<HTMLDivElement>) {
+    event.preventDefault()
+    const delta = event.deltaY < 0 ? 0.15 : -0.15
+    setViewerZoom((current) => Math.max(0.45, Math.min(4, Number((current + delta).toFixed(2)))))
+  }
+
+  function handleViewerPointerDown(event: PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return
+    panStartRef.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      offsetX: viewerOffset.x,
+      offsetY: viewerOffset.y
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setIsViewerPanning(true)
+  }
+
+  function handleViewerPointerMove(event: PointerEvent<HTMLDivElement>) {
+    const start = panStartRef.current
+    if (!start || start.pointerId !== event.pointerId) return
+    setViewerOffset({
+      x: start.offsetX + event.clientX - start.x,
+      y: start.offsetY + event.clientY - start.y
+    })
+  }
+
+  function handleViewerPointerUp(event: PointerEvent<HTMLDivElement>) {
+    const start = panStartRef.current
+    if (start?.pointerId === event.pointerId) {
+      panStartRef.current = null
+      setIsViewerPanning(false)
+    }
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
+
   if (loading) return <div className="panel">Loading analysis window...</div>
   if (error) return <div className="error-box">{error}</div>
   if (!analysis || !detail) return <div className="panel">No analysis data available.</div>
@@ -618,6 +824,13 @@ export function ClaimAnalysisPage() {
 
   const sla = slaStatus(detail)
   const evidenceByDetection = new Map(analysis.evidence_summary.map((evidence) => [evidence.detection_type, evidence]))
+  const selectedDocument = detail.documents.find((document) => document.document_id === activeDocumentId) || detail.documents[0]
+  const documentUploadLabel = documentUploadFiles.length
+    ? `${documentUploadFiles.length} file${documentUploadFiles.length === 1 ? '' : 's'} selected`
+    : 'Select receipt evidence files'
+  const documentUploadHelper = documentUploadFiles.length
+    ? documentUploadFiles.map((file) => file.name).join(', ')
+    : 'PDF, image, spreadsheet, text, or scanned receipt files'
 
   return (
     <div className="app-page analysis-page">
@@ -666,6 +879,114 @@ export function ClaimAnalysisPage() {
       </CollapsiblePanel>
 
               </>
+            )
+          },
+          {
+            id: 'receipts',
+            label: 'Receipts',
+            eyebrow: 'Evidence',
+            children: (
+      <CollapsiblePanel className="panel document-vault-panel app-grow" title="Receipt Evidence Vault" allowFocusView>
+        <article className="document-vault-layout">
+          <section className="document-upload-card">
+            <div>
+              <h3 className="section-title"><UploadIcon size={16} />Receipt Evidence Upload</h3>
+              <p className="muted-text">Attach hotel receipts, scanned folios, PDFs, images, or supporting expense evidence to this case file.</p>
+            </div>
+            <form className="form-grid" onSubmit={handleDocumentUpload}>
+              <input
+                ref={documentInputRef}
+                id="case-receipt-document-upload"
+                className="file-input-hidden"
+                type="file"
+                multiple
+                onChange={(event) => setDocumentUploadFiles(Array.from(event.target.files || []))}
+              />
+              <label className={`upload-dropzone ${documentUploadFiles.length ? 'has-file' : ''}`} htmlFor="case-receipt-document-upload">
+                <span className="upload-dropzone-icon"><DocumentIcon size={22} /></span>
+                <span className="upload-dropzone-copy">
+                  <strong>{documentUploadLabel}</strong>
+                  <small>{documentUploadHelper}</small>
+                </span>
+                <span className="upload-dropzone-action">{documentUploadFiles.length ? 'Change files' : 'Browse files'}</span>
+              </label>
+
+              {documentMessage && <div className="success-box">{documentMessage}</div>}
+              {documentError && <div className="error-box">{documentError}</div>}
+              <button type="submit" disabled={!documentUploadFiles.length || documentUploading}>
+                <span className="btn-inline"><UploadIcon size={14} />{documentUploading ? 'Uploading receipts...' : 'Upload Receipts'}</span>
+              </button>
+            </form>
+          </section>
+
+          <section className="document-vault-main">
+            <div className="section-title-row">
+              <div>
+                <h3 className="section-title"><DocumentIcon size={16} />Stored Receipt Evidence</h3>
+                <p className="muted-text">Select a receipt to preview it. Use focused preview for zooming and left-button mouse panning.</p>
+              </div>
+              <span className="source-ref-pill">{detail.documents.length} files</span>
+            </div>
+
+            <div className="document-browser-grid">
+              <div className="document-list-panel" aria-label="Stored receipt files">
+                {!detail.documents.length && (
+                  <div className="empty-muted document-empty-state">
+                    <DocumentIcon size={34} />
+                    <strong>No receipt evidence uploaded yet.</strong>
+                    <span>Upload files from the left panel to build the case evidence pack.</span>
+                  </div>
+                )}
+                {detail.documents.map((document) => (
+                  <button
+                    key={document.document_id}
+                    type="button"
+                    className={`document-list-item${selectedDocument?.document_id === document.document_id ? ' is-active' : ''}`}
+                    onClick={() => setActiveDocumentId(document.document_id)}
+                  >
+                    <span className="document-list-icon"><DocumentIcon size={18} /></span>
+                    <span className="document-list-copy">
+                      <strong>{document.file_name}</strong>
+                      <small>{documentKindLabel(document)} · {formatDateTime(document.created_at)}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="document-preview-card">
+                {selectedDocument ? (
+                  <>
+                    <div className="document-preview-head">
+                      <div>
+                        <p className="eyebrow">{documentKindLabel(selectedDocument)}</p>
+                        <h4>{selectedDocument.file_name}</h4>
+                        <p className="muted-text">Stored {formatDateTime(selectedDocument.created_at)} · {selectedDocument.document_type || 'unclassified'}</p>
+                      </div>
+                      <div className="document-preview-actions">
+                        <a className="small-btn ghost-btn" href={getDocumentUrl(detail.receipt_id, selectedDocument.document_id)} target="_blank" rel="noreferrer">
+                          Open Original
+                        </a>
+                        <button type="button" className="small-btn" onClick={() => openFocusedDocument(selectedDocument)}>
+                          Focus Preview
+                        </button>
+                        <button type="button" className="small-btn danger-btn" onClick={() => handleDocumentDelete(selectedDocument)}>
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                    <DocumentPreview claimId={detail.receipt_id} document={selectedDocument} />
+                  </>
+                ) : (
+                  <div className="empty-muted document-empty-state">
+                    <DocumentIcon size={34} />
+                    <strong>Select receipt evidence to preview.</strong>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+        </article>
+      </CollapsiblePanel>
             )
           },
           {
@@ -906,6 +1227,47 @@ export function ClaimAnalysisPage() {
           }] : [])
         ]}
       />
+
+      {focusedDocument && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setFocusedDocument(null)}>
+          <section className="modal-panel document-focus-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head document-focus-head">
+              <div>
+                <h3>{focusedDocument.file_name}</h3>
+                <p className="muted-text">Mouse wheel to zoom. Hold left mouse button and drag to pan.</p>
+              </div>
+              <div className="document-focus-controls">
+                <button type="button" className="small-btn ghost-btn" onClick={() => setViewerZoom((current) => Math.max(0.45, Number((current - 0.2).toFixed(2))))}>Zoom Out</button>
+                <span className="source-ref-pill">{Math.round(viewerZoom * 100)}%</span>
+                <button type="button" className="small-btn ghost-btn" onClick={() => setViewerZoom((current) => Math.min(4, Number((current + 0.2).toFixed(2))))}>Zoom In</button>
+                <button
+                  type="button"
+                  className="small-btn ghost-btn"
+                  onClick={() => {
+                    setViewerZoom(1)
+                    setViewerOffset({ x: 0, y: 0 })
+                  }}
+                >
+                  Reset
+                </button>
+                <button type="button" className="small-btn" onClick={() => setFocusedDocument(null)}>Close</button>
+              </div>
+            </div>
+            <DocumentPreview
+              claimId={detail.receipt_id}
+              document={focusedDocument}
+              zoom={viewerZoom}
+              offset={viewerOffset}
+              interactive
+              isPanning={isViewerPanning}
+              onWheel={handleViewerWheel}
+              onPointerDown={handleViewerPointerDown}
+              onPointerMove={handleViewerPointerMove}
+              onPointerUp={handleViewerPointerUp}
+            />
+          </section>
+        </div>
+      )}
 
       {activeEvidence && (
         <div className="modal-backdrop" role="presentation" onClick={() => setActiveEvidence(null)}>

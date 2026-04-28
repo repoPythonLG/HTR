@@ -8,6 +8,7 @@ import {
   ClaimDetail,
   ClaimSummary,
   CurrentUser,
+  DocumentRecord,
   OutlierMapDashboard,
   EmployeeDashboard,
   EmployeeRiskDashboard,
@@ -449,6 +450,20 @@ export async function updateRiskSettings(payload: RiskSettings): Promise<RiskSet
 
 export function getDocumentUrl(claimId: string, documentId: string): string {
   return `${api.defaults.baseURL}/claims/${claimId}/documents/${documentId}`
+}
+
+export async function uploadClaimDocuments(claimId: string, files: File[]): Promise<DocumentRecord[]> {
+  const form = new FormData()
+  files.forEach((file) => form.append('files', file))
+
+  const response = await api.post<DocumentRecord[]>(`/claims/${claimId}/documents`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+  return response.data
+}
+
+export async function deleteClaimDocument(claimId: string, documentId: string): Promise<void> {
+  await api.delete(`/claims/${claimId}/documents/${documentId}`)
 }
 
 export function getActiveSpreadsheetViewUrl(): string {

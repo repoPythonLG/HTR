@@ -43,6 +43,7 @@ from app.schemas import (
     RiskSettingsOut,
     ReviewActionIn,
     SpreadsheetPreviewOut,
+    DocumentOut,
     UploadResponse,
     UserOut,
 )
@@ -1051,6 +1052,108 @@ def get_document(
     if not path.exists():
         raise HTTPException(status_code=404, detail="Document file missing")
     return FileResponse(path=path, media_type=document.mime_type, filename=document.file_name)
+
+
+@router.post("/claims/{claim_id}/documents", response_model=List[DocumentOut])
+def upload_claim_documents(
+    claim_id: str,
+    files: List[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("employee", "reviewer", "administrator")),
+):
+    claim = db.execute(select(Claim).where(Claim.claim_id == claim_id)).scalars().first()
+    if not claim:
+        raise HTTPException(status_code=404, detail="Travel expense entry not found")
+    _enforce_employee_claim_scope(current_user, claim)
+
+    uploaded_ids: List[str] = []
+    for file in files:
+        file_path, mime_type, image_hash = save_upload(claim.claim_id, file)
+        document = ReceiptDocument(
+            claim_id=claim.claim_id,
+            file_name=file.filename or "document",
+            file_path=file_path,
+            mime_type=mime_type,
+            image_hash=image_hash,
+        )
+        db.add(document)
+        db.flush()
+        uploaded_ids.append(document.document_id)
+
+        _record_case_event(
+            db,
+            claim_id=claim.claim_id,
+            event_type="source_document_upload",
+            title="Receipt evidence uploaded",
+            description=f"{document.file_name} was attached to the travel expense entry case file.",
+            actor_id=current_user.username,
+            severity="neutral",
+            metadata={
+                "document_id": document.document_id,
+                "file_name": document.file_name,
+                "mime_type": document.mime_type,
+                "image_hash": document.image_hash,
+            },
+        )
+
+    claim.updated_at = datetime.utcnow()
+    db.commit()
+
+    return (
+        db.execute(
+            select(ReceiptDocument)
+            .options(joinedload(ReceiptDocument.extracted_fields))
+            .where(ReceiptDocument.document_id.in_(uploaded_ids))
+        )
+        .unique()
+        .scalars()
+        .all()
+    )
+
+
+@router.delete("/claims/{claim_id}/documents/{document_id}", status_code=204)
+def delete_claim_document(
+    claim_id: str,
+    document_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("employee", "reviewer", "administrator")),
+):
+    claim = db.execute(select(Claim).where(Claim.claim_id == claim_id)).scalars().first()
+    if not claim:
+        raise HTTPException(status_code=404, detail="Travel expense entry not found")
+    _enforce_employee_claim_scope(current_user, claim)
+
+    document = (
+        db.execute(
+            select(ReceiptDocument).where(
+                ReceiptDocument.claim_id == claim_id,
+                ReceiptDocument.document_id == document_id,
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    document_name = document.file_name
+    document_path = Path(document.file_path)
+    db.delete(document)
+    _record_case_event(
+        db,
+        claim_id=claim.claim_id,
+        event_type="source_document_removed",
+        title="Receipt evidence removed",
+        description=f"{document_name} was removed from the travel expense entry case file.",
+        actor_id=current_user.username,
+        severity="neutral",
+        metadata={"document_id": document_id, "file_name": document_name},
+    )
+    claim.updated_at = datetime.utcnow()
+    db.commit()
+
+    if document_path.exists():
+        document_path.unlink(missing_ok=True)
 
 
 @router.post("/claims/{claim_id}/review-action")
