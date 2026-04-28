@@ -160,8 +160,6 @@ export function ExecutiveDashboardPage() {
     return <div className="panel">Loading executive dashboard...</div>
   }
 
-  const qualityIndex = Math.max(0, Math.round(100 - executive.wrong_receipt_rate_pct))
-
   const riskRows = Object.entries(executive.by_risk_level).sort((a, b) => b[1] - a[1])
   const deptRows = Object.entries(executive.by_department).sort((a, b) => b[1] - a[1]).slice(0, 8)
 
@@ -170,20 +168,7 @@ export function ExecutiveDashboardPage() {
 
   return (
     <div className="app-page executive-page">
-      <CollapsiblePanel className="panel hero-panel" collapsible={false}>
-        <div>
-          <p className="eyebrow">Corporate Compliance Center</p>
-          <h2>Reimbursement Control Dashboard</h2>
-          <p>Monitor suspicious entry concentration, wrong-entry trends, and portfolio exposure.</p>
-        </div>
-        <div className="quality-gauge">
-          <span>Control Quality Index</span>
-          <strong>{qualityIndex}</strong>
-          <p>/ 100</p>
-        </div>
-      </CollapsiblePanel>
-
-      <CollapsiblePanel className="panel" title="Portfolio Performance Metrics">
+      <CollapsiblePanel className="panel executive-metrics-panel" title="Portfolio Performance Metrics">
         <div className="metric-grid">
           <article className="metric-card">
             <div className="metric-line"><span>Total Entries</span><ReceiptsIcon className="metric-icon" /></div>
@@ -212,7 +197,7 @@ export function ExecutiveDashboardPage() {
         </div>
       </CollapsiblePanel>
 
-      <CollapsiblePanel className="panel two-col" title="Executive Risk Snapshot">
+      <CollapsiblePanel className="panel two-col executive-risk-panel" title="Executive Risk Snapshot">
         <article>
           <h3>Risk Band Distribution</h3>
           {riskRows.length === 0 && <p className="empty-muted">No analyzed entries yet.</p>}
@@ -230,7 +215,7 @@ export function ExecutiveDashboardPage() {
         </article>
       </CollapsiblePanel>
 
-      <CollapsiblePanel className="panel driver-panel" title="Top Detection Drivers" allowFocusView>
+      <CollapsiblePanel className="panel driver-panel executive-driver-panel app-grow" title="Top Detection Drivers" allowFocusView>
         <div className="panel-head">
           <div>
             <h3>Top Detection Drivers</h3>
@@ -239,7 +224,9 @@ export function ExecutiveDashboardPage() {
           <span className="source-ref-pill">{executive.top_detection_types.length} active drivers</span>
         </div>
 
-        <DetectionDriversBoard drivers={executive.top_detection_types} />
+        <div className="driver-panel-scroll panel-scroll">
+          <DetectionDriversBoard drivers={executive.top_detection_types} />
+        </div>
       </CollapsiblePanel>
     </div>
   )

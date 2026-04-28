@@ -146,7 +146,7 @@ export async function fetchClaims(params?: {
 }): Promise<ClaimSummary[]> {
   const page = await fetchClaimPage({
     ...params,
-    limit: params?.limit ?? 1000,
+    limit: params?.limit ?? 200,
     offset: params?.offset ?? 0
   })
   return page.items
@@ -450,6 +450,13 @@ export async function updateRiskSettings(payload: RiskSettings): Promise<RiskSet
 
 export function getDocumentUrl(claimId: string, documentId: string): string {
   return `${api.defaults.baseURL}/claims/${claimId}/documents/${documentId}`
+}
+
+export async function fetchDocumentBlob(claimId: string, documentId: string): Promise<Blob> {
+  const response = await api.get<Blob>(`/claims/${claimId}/documents/${documentId}`, {
+    responseType: 'blob'
+  })
+  return response.data
 }
 
 export async function uploadClaimDocuments(claimId: string, files: File[]): Promise<DocumentRecord[]> {

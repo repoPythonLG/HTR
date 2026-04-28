@@ -68,7 +68,7 @@ from app.services.storage import (
 
 router = APIRouter()
 
-PROCESSED_CLAIM_STATUSES = {"reviewed", "escalated"}
+PROCESSED_CLAIM_STATUSES = {"approved", "dismissed", "reviewed", "escalated", "completed"}
 ACTIVE_CLAIM_STATUSES = {"uploaded", "analyzed", "under_review"}
 
 
@@ -1051,7 +1051,12 @@ def get_document(
     path = Path(document.file_path)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Document file missing")
-    return FileResponse(path=path, media_type=document.mime_type, filename=document.file_name)
+    return FileResponse(
+        path=path,
+        media_type=document.mime_type or "application/octet-stream",
+        filename=document.file_name,
+        content_disposition_type="inline",
+    )
 
 
 @router.post("/claims/{claim_id}/documents", response_model=List[DocumentOut])
@@ -1183,7 +1188,7 @@ def review_action(
         claim.suspicious_flag = True
         claim.case_closed_at = datetime.utcnow()
     elif status_text in {"approved", "dismissed", "completed"}:
-        claim.status = "reviewed"
+        claim.status = status_text
         claim.case_closed_at = datetime.utcnow()
     else:
         claim.status = "under_review"

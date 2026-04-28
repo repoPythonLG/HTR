@@ -68,6 +68,7 @@ def test_attach_preview_and_remove_receipt_evidence(client, auth_headers):
     preview_response = client.get(f"/api/v1/claims/{claim_id}/documents/{document_id}", headers=reviewer_headers)
     assert preview_response.status_code == 200, preview_response.text
     assert b"Hotel Folio" in preview_response.content
+    assert preview_response.headers["content-disposition"].startswith("inline;")
 
     detail_response = client.get(f"/api/v1/claims/{claim_id}", headers=reviewer_headers)
     assert detail_response.status_code == 200
@@ -85,6 +86,42 @@ def test_attach_preview_and_remove_receipt_evidence(client, auth_headers):
     event_types = {item["event_type"] for item in timeline_response.json()["events"]}
     assert "source_document_upload" in event_types
     assert "source_document_removed" in event_types
+
+
+def test_approved_decision_moves_entry_to_history(client, auth_headers):
+    reviewer_headers = auth_headers["reviewer"]
+    claim_id = _upload_claim(
+        client,
+        reviewer_headers,
+        employee_id="EMP-APPROVED",
+        claim_total=1200,
+        city="Jubail",
+        start_date="2026-04-01",
+        end_date="2026-04-02",
+        docs=[("approved_entry.txt", "Entry no: APPROVED-001\nTotal: 1200")],
+    )
+
+    review_response = client.post(
+        f"/api/v1/claims/{claim_id}/review-action",
+        headers=reviewer_headers,
+        json={
+            "reviewer_id": "REV-APPROVER",
+            "status": "approved",
+            "notes": "Evidence accepted",
+            "disposition_reason": "valid_entry",
+        },
+    )
+    assert review_response.status_code == 200, review_response.text
+    assert review_response.json()["claim_status"] == "approved"
+
+    active_response = client.get("/api/v1/claims", headers=reviewer_headers, params={"queue": "active", "search": claim_id})
+    assert active_response.status_code == 200
+    assert active_response.json()["total"] == 0
+
+    history_response = client.get("/api/v1/claims", headers=reviewer_headers, params={"queue": "history", "status": "approved"})
+    assert history_response.status_code == 200
+    history_items = history_response.json()["items"]
+    assert any(item["claim_id"] == claim_id and item["status"] == "approved" for item in history_items)
 
 
 def test_upload_analyze_and_review_flow(client, auth_headers):

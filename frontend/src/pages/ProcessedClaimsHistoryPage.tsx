@@ -1,7 +1,7 @@
 import dayjs from 'dayjs'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { fetchReceipts } from '../api/client'
+import { fetchReceiptPage } from '../api/client'
 import { ReceiptsIcon, DocumentIcon, RefreshIcon } from '../components/BrandIcons'
 import { CollapsiblePanel } from '../components/CollapsiblePanel'
 import { PageTabs } from '../components/PageTabs'
@@ -9,7 +9,8 @@ import { ClaimSummary } from '../types'
 
 function statusChipClass(status: string) {
   const value = status.toLowerCase()
-  if (value === 'reviewed') return 'chip low'
+  if (value === 'approved' || value === 'reviewed' || value === 'completed') return 'chip low'
+  if (value === 'dismissed') return 'chip medium'
   if (value === 'escalated') return 'chip high'
   return 'chip medium'
 }
@@ -22,47 +23,73 @@ function priorityChipClass(priority?: string | null) {
   return 'chip low'
 }
 
+function useDebouncedValue(value: string, delayMs = 300) {
+  const [debouncedValue, setDebouncedValue] = useState(value)
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => setDebouncedValue(value), delayMs)
+    return () => window.clearTimeout(handle)
+  }, [value, delayMs])
+
+  return debouncedValue
+}
+
 export function ProcessedClaimsHistoryPage() {
   const navigate = useNavigate()
 
   const [receipts, setReceipts] = useState<ClaimSummary[]>([])
+  const [totalReceipts, setTotalReceipts] = useState(0)
   const [statusFilter, setStatusFilter] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
+  const debouncedSearchTerm = useDebouncedValue(searchTerm)
+  const [pageSize, setPageSize] = useState(50)
+  const [pageIndex, setPageIndex] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
 
-  async function loadReceipts() {
+  const loadReceipts = useCallback(async () => {
     setLoading(true)
     setError(undefined)
     try {
-      const rows = await fetchReceipts({ queue: 'history', status: statusFilter || undefined })
-      setReceipts(rows)
+      const page = await fetchReceiptPage({
+        queue: 'history',
+        status: statusFilter || undefined,
+        search: debouncedSearchTerm.trim() || undefined,
+        sortBy: 'created_desc',
+        limit: pageSize,
+        offset: pageIndex * pageSize
+      })
+      setReceipts(page.items)
+      setTotalReceipts(page.total)
     } catch (err) {
       setError(String(err))
     } finally {
       setLoading(false)
     }
+  }, [debouncedSearchTerm, pageIndex, pageSize, statusFilter])
+
+  function resetToFirstPage() {
+    setPageIndex(0)
   }
 
   useEffect(() => {
     loadReceipts()
-  }, [statusFilter])
+  }, [loadReceipts])
 
-  const filteredReceipts = useMemo(() => {
-    const q = searchTerm.trim().toLowerCase()
-    if (!q) return receipts
+  useEffect(() => {
+    resetToFirstPage()
+  }, [debouncedSearchTerm])
 
-    return receipts.filter((receipt) => (
-      receipt.receipt_id.toLowerCase().includes(q) ||
-      receipt.employee_id.toLowerCase().includes(q) ||
-      receipt.employee_name.toLowerCase().includes(q) ||
-      (receipt.destination_city || '').toLowerCase().includes(q) ||
-      (receipt.trip_number || '').toLowerCase().includes(q)
-    ))
-  }, [receipts, searchTerm])
+  const historySummary = useMemo(() => {
+    const approved = receipts.filter((item) => ['approved', 'reviewed', 'completed'].includes(item.status.toLowerCase())).length
+    const dismissed = receipts.filter((item) => item.status.toLowerCase() === 'dismissed').length
+    const escalated = receipts.filter((item) => item.status.toLowerCase() === 'escalated').length
+    return { approved, dismissed, escalated }
+  }, [receipts])
 
-  const reviewedCount = receipts.filter((item) => item.status === 'reviewed').length
-  const escalatedCount = receipts.filter((item) => item.status === 'escalated').length
+  const showingFrom = totalReceipts === 0 ? 0 : pageIndex * pageSize + 1
+  const showingTo = Math.min(totalReceipts, pageIndex * pageSize + receipts.length)
+  const totalPages = Math.max(1, Math.ceil(totalReceipts / pageSize))
 
   return (
     <div className="app-page receipts-workbench-page">
@@ -93,15 +120,19 @@ export function ProcessedClaimsHistoryPage() {
                   <div className="metric-grid compact">
                     <article className="metric-card">
                       <div className="metric-line"><span>Total Processed</span><ReceiptsIcon className="metric-icon" /></div>
-                      <strong>{receipts.length}</strong>
+                      <strong>{totalReceipts}</strong>
                     </article>
                     <article className="metric-card">
-                      <div className="metric-line"><span>Reviewed</span><ReceiptsIcon className="metric-icon" /></div>
-                      <strong>{reviewedCount}</strong>
+                      <div className="metric-line"><span>Approved On Page</span><ReceiptsIcon className="metric-icon" /></div>
+                      <strong>{historySummary.approved}</strong>
                     </article>
                     <article className="metric-card">
-                      <div className="metric-line"><span>Escalated</span><ReceiptsIcon className="metric-icon" /></div>
-                      <strong>{escalatedCount}</strong>
+                      <div className="metric-line"><span>Dismissed On Page</span><ReceiptsIcon className="metric-icon" /></div>
+                      <strong>{historySummary.dismissed}</strong>
+                    </article>
+                    <article className="metric-card">
+                      <div className="metric-line"><span>Escalated On Page</span><ReceiptsIcon className="metric-icon" /></div>
+                      <strong>{historySummary.escalated}</strong>
                     </article>
                   </div>
                 </CollapsiblePanel>
@@ -113,24 +144,56 @@ export function ProcessedClaimsHistoryPage() {
             label: 'History Records',
             eyebrow: 'Archive',
             children: (
-              <CollapsiblePanel className="panel receipts-workbench-panel app-grow" allowFocusView>
+              <CollapsiblePanel className="panel receipts-history-panel app-grow" allowFocusView>
                 <div className="receipts-workbench-controls">
                   <div className="toolbar">
                     <label>
                       Search entry / employee
-                      <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Entry ID, employee ID, name, trip number" />
+                      <input value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); resetToFirstPage() }} placeholder="Entry ID, employee ID, name, trip number" />
                     </label>
 
                     <label>
                       History Status
-                      <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                      <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); resetToFirstPage() }}>
                         <option value="">All processed</option>
-                        <option value="reviewed">Reviewed</option>
+                        <option value="approved">Approved</option>
+                        <option value="dismissed">Dismissed</option>
+                        <option value="reviewed">Legacy Reviewed</option>
                         <option value="escalated">Escalated</option>
+                        <option value="completed">Completed</option>
+                      </select>
+                    </label>
+
+                    <label>
+                      Rows
+                      <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); resetToFirstPage() }}>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                        <option value={200}>200</option>
                       </select>
                     </label>
                   </div>
                 </div>
+
+                <div className="queue-page-strip">
+                  <span>
+                    {loading
+                      ? 'Loading processed history...'
+                      : `Showing ${showingFrom}-${showingTo} of ${totalReceipts} processed entries`}
+                  </span>
+                  <div className="pagination-controls">
+                    <button className="small-btn" disabled={pageIndex === 0 || loading} onClick={() => setPageIndex((page) => Math.max(0, page - 1))}>
+                      Previous
+                    </button>
+                    <strong>Page {pageIndex + 1} of {totalPages}</strong>
+                    <button className="small-btn" disabled={pageIndex + 1 >= totalPages || loading} onClick={() => setPageIndex((page) => page + 1)}>
+                      Next
+                    </button>
+                  </div>
+                </div>
+
+                {error && <div className="error-box">{error}</div>}
 
                 <div className="table-wrap receipts-workbench-table-wrap table-fill-wrap">
                   <table className="table professional-table">
@@ -148,13 +211,13 @@ export function ProcessedClaimsHistoryPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredReceipts.length === 0 && (
+                      {receipts.length === 0 && (
                         <tr>
                           <td colSpan={9} className="empty-table">No processed travel expense entries match your filters.</td>
                         </tr>
                       )}
 
-                      {filteredReceipts.map((receipt) => (
+                      {receipts.map((receipt) => (
                         <tr key={receipt.receipt_id}>
                           <td>
                             <strong>{receipt.receipt_id}</strong>

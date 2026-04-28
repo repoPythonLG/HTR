@@ -1,8 +1,8 @@
 import dayjs from 'dayjs'
 import { FormEvent, PointerEvent, useEffect, useRef, useState, WheelEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { deleteClaimDocument, fetchCaseTimeline, fetchClaimAnalysis, fetchClaimDetail, getDocumentUrl, submitReviewAction, updateCaseManagement, uploadClaimDocuments } from '../api/client'
-import { AnalyzeIcon, DocumentIcon, RiskIcon, UploadIcon, UsersIcon, WrongClaimIcon } from '../components/BrandIcons'
+import { deleteClaimDocument, fetchCaseTimeline, fetchClaimAnalysis, fetchClaimDetail, fetchDocumentBlob, getDocumentUrl, submitReviewAction, updateCaseManagement, uploadClaimDocuments } from '../api/client'
+import { AnalyzeIcon, DocumentIcon, RiskIcon, UploadIcon, UsersIcon } from '../components/BrandIcons'
 import { CollapsiblePanel } from '../components/CollapsiblePanel'
 import { PageTabs } from '../components/PageTabs'
 import { useAuth } from '../context/AuthContext'
@@ -107,6 +107,16 @@ function documentKindLabel(document: DocumentRecord) {
   return 'Document evidence'
 }
 
+function previewBlobForKind(blob: Blob, kind: DocumentPreviewKind, document: DocumentRecord) {
+  if (kind === 'text') return new Blob([blob], { type: 'text/plain;charset=utf-8' })
+  if (kind === 'pdf') return new Blob([blob], { type: 'application/pdf' })
+  if (kind === 'image') {
+    const mimeType = document.mime_type?.startsWith('image/') ? document.mime_type : blob.type || 'image/png'
+    return new Blob([blob], { type: mimeType })
+  }
+  return blob
+}
+
 function DocumentPreview({
   claimId,
   document,
@@ -130,11 +140,51 @@ function DocumentPreview({
   onPointerMove?: (event: PointerEvent<HTMLDivElement>) => void
   onPointerUp?: (event: PointerEvent<HTMLDivElement>) => void
 }) {
-  const url = getDocumentUrl(claimId, document.document_id)
   const kind = documentPreviewKind(document)
+  const directUrl = getDocumentUrl(claimId, document.document_id)
+  const canInlinePreview = kind === 'image' || kind === 'pdf' || kind === 'text'
+  const [previewUrl, setPreviewUrl] = useState<string>()
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState<string>()
   const transform = interactive
     ? { transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})` }
     : undefined
+
+  useEffect(() => {
+    let cancelled = false
+    let objectUrl: string | undefined
+
+    setPreviewUrl(undefined)
+    setPreviewError(undefined)
+
+    if (!canInlinePreview) {
+      setPreviewLoading(false)
+      return undefined
+    }
+
+    setPreviewLoading(true)
+    fetchDocumentBlob(claimId, document.document_id)
+      .then((blob) => {
+        const nextUrl = URL.createObjectURL(previewBlobForKind(blob, kind, document))
+        if (cancelled) {
+          URL.revokeObjectURL(nextUrl)
+          return
+        }
+        objectUrl = nextUrl
+        setPreviewUrl(nextUrl)
+      })
+      .catch(() => {
+        if (!cancelled) setPreviewError('Preview could not be loaded in the application.')
+      })
+      .finally(() => {
+        if (!cancelled) setPreviewLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [canInlinePreview, claimId, document, kind])
 
   return (
     <div
@@ -146,18 +196,32 @@ function DocumentPreview({
       onPointerCancel={onPointerUp}
     >
       <div className="document-preview-stage" style={transform}>
-        {kind === 'image' && (
-          <img src={url} alt={`Preview of ${document.file_name}`} draggable={false} />
+        {previewLoading && (
+          <div className="document-preview-empty">
+            <DocumentIcon size={34} />
+            <strong>Loading preview...</strong>
+          </div>
         )}
-        {(kind === 'pdf' || kind === 'text') && (
-          <iframe src={url} title={`Preview of ${document.file_name}`} />
+        {previewError && (
+          <div className="document-preview-empty">
+            <DocumentIcon size={34} />
+            <strong>Preview unavailable</strong>
+            <p>{previewError}</p>
+            <a href={directUrl} target="_blank" rel="noreferrer" className="text-link">Open original</a>
+          </div>
         )}
-        {(kind === 'spreadsheet' || kind === 'other') && (
+        {!previewLoading && !previewError && kind === 'image' && previewUrl && (
+          <img src={previewUrl} alt={`Preview of ${document.file_name}`} draggable={false} />
+        )}
+        {!previewLoading && !previewError && (kind === 'pdf' || kind === 'text') && previewUrl && (
+          <iframe src={previewUrl} title={`Preview of ${document.file_name}`} />
+        )}
+        {!previewLoading && !previewError && (kind === 'spreadsheet' || kind === 'other') && (
           <div className="document-preview-empty">
             <DocumentIcon size={42} />
             <strong>Preview is not available for this file type</strong>
             <p>Open the original document to inspect it in the browser or a desktop viewer.</p>
-            <a href={url} target="_blank" rel="noreferrer" className="text-link">Open original</a>
+            <a href={directUrl} target="_blank" rel="noreferrer" className="text-link">Open original</a>
           </div>
         )}
       </div>
@@ -592,8 +656,8 @@ export function ClaimAnalysisPage() {
       if (activeDocumentId) setActiveDocumentId(null)
       return
     }
-    if (!activeDocumentId || !documents.some((document) => document.document_id === activeDocumentId)) {
-      setActiveDocumentId(documents[0].document_id)
+    if (activeDocumentId && !documents.some((document) => document.document_id === activeDocumentId)) {
+      setActiveDocumentId(null)
     }
   }, [activeDocumentId, detail?.documents])
 
@@ -824,7 +888,7 @@ export function ClaimAnalysisPage() {
 
   const sla = slaStatus(detail)
   const evidenceByDetection = new Map(analysis.evidence_summary.map((evidence) => [evidence.detection_type, evidence]))
-  const selectedDocument = detail.documents.find((document) => document.document_id === activeDocumentId) || detail.documents[0]
+  const selectedDocument = detail.documents.find((document) => document.document_id === activeDocumentId)
   const documentUploadLabel = documentUploadFiles.length
     ? `${documentUploadFiles.length} file${documentUploadFiles.length === 1 ? '' : 's'} selected`
     : 'Select receipt evidence files'
@@ -835,50 +899,62 @@ export function ClaimAnalysisPage() {
   return (
     <div className="app-page analysis-page">
       <PageTabs
+        defaultTabId="findings"
         tabs={[
           {
-            id: 'overview',
-            label: 'Overview',
-            eyebrow: 'Entry',
+            id: 'findings',
+            label: 'Findings & Evidence',
+            eyebrow: 'Review',
             children: (
-              <>
-      <CollapsiblePanel className="panel hero-panel">
-        <div>
-          <p className="eyebrow">Travel Expense Investigation Workspace</p>
-          <h2>Travel Expense Entry {analysis.receipt_id}</h2>
-          <p>
-            Employee {analysis.employee_name} · Last updated {dayjs(detail.updated_at).format('DD MMM YYYY HH:mm')}
-          </p>
-        </div>
-        <div className="hero-actions">
-          <span className={severityClass(analysis.risk_level)}>{analysis.risk_level}</span>
-          <strong>{analysis.risk_score.toFixed(1)} pts</strong>
-          <Link className="text-link" to="/receipts">Back to Workbench</Link>
-        </div>
-      </CollapsiblePanel>
+              <CollapsiblePanel className="panel analysis-evidence-panel app-grow" title="Findings and Evidence" allowFocusView>
+                <article className="panel-scroll">
+                  <div className="analysis-summary-strip">
+                    <div>
+                      <p className="eyebrow">Travel Expense Entry</p>
+                      <h2>Travel Expense Entry {analysis.receipt_id}</h2>
+                      <p>Employee {analysis.employee_name} · Last updated {dayjs(detail.updated_at).format('DD MMM YYYY HH:mm')}</p>
+                    </div>
+                    <div className="analysis-summary-actions">
+                      <span className={severityClass(analysis.risk_level)}>{analysis.risk_level}</span>
+                      <strong>{analysis.risk_score.toFixed(1)} pts</strong>
+                      <Link className="text-link" to="/receipts">Back to Workbench</Link>
+                    </div>
+                  </div>
 
-      <CollapsiblePanel className="panel" title="Investigation Snapshot">
-        <div className="metric-grid compact">
-          <article className="metric-card">
-            <div className="metric-line"><span>Primary Red Flag</span><RiskIcon className="metric-icon" /></div>
-            <strong>{analysis.primary_red_flag ? formatDetectionType(analysis.primary_red_flag) : 'N/A'}</strong>
-          </article>
-          <article className="metric-card">
-            <div className="metric-line"><span>Suspicious Entry</span><RiskIcon className="metric-icon" /></div>
-            <strong>{analysis.suspicious_flag ? 'Yes' : 'No'}</strong>
-          </article>
-          <article className="metric-card">
-            <div className="metric-line"><span>Incorrect Entry</span><WrongClaimIcon className="metric-icon" /></div>
-            <strong>{analysis.incorrect_flag ? 'Yes' : 'No'}</strong>
-          </article>
-          <article className="metric-card">
-            <div className="metric-line"><span>Findings</span><AnalyzeIcon className="metric-icon" /></div>
-            <strong>{analysis.findings.length}</strong>
-          </article>
-        </div>
-      </CollapsiblePanel>
+                  <div className="section-title-row">
+                    <div>
+                      <h3 className="section-title"><AnalyzeIcon size={16} />Findings and Evidence</h3>
+                      <p className="muted-text">Each finding explains the issue, shows the business evidence, and highlights related records where relevant.</p>
+                    </div>
+                    <span className="source-ref-pill">{analysis.findings.length} findings</span>
+                  </div>
 
-              </>
+                  <div className="receipt-profile-card">
+                    <h4>Travel Expense Entry Details</h4>
+                    <p className="muted-text">Business-friendly view of the imported travel expense table entry and key travel context.</p>
+                    <dl className="fact-grid">
+                      {receiptProfileRows.map((row) => (
+                        <div key={row.label} className="fact-item">
+                          <dt>{row.label}</dt>
+                          <dd>{toFactValue(row.value)}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+
+                  <div className="finding-evidence-grid">
+                    {analysis.findings.map((finding) => (
+                      <FindingEvidenceCard
+                        key={`${finding.detection_type}-${finding.policy_reference || 'none'}`}
+                        finding={finding}
+                        evidence={evidenceByDetection.get(finding.detection_type)}
+                        onTechnicalDetails={setActiveEvidence}
+                        onRelatedRecord={setActiveRelatedRecord}
+                      />
+                    ))}
+                  </div>
+                </article>
+              </CollapsiblePanel>
             )
           },
           {
@@ -886,151 +962,107 @@ export function ClaimAnalysisPage() {
             label: 'Receipts',
             eyebrow: 'Evidence',
             children: (
-      <CollapsiblePanel className="panel document-vault-panel app-grow" title="Receipt Evidence Vault" allowFocusView>
-        <article className="document-vault-layout">
-          <section className="document-upload-card">
-            <div>
-              <h3 className="section-title"><UploadIcon size={16} />Receipt Evidence Upload</h3>
-              <p className="muted-text">Attach hotel receipts, scanned folios, PDFs, images, or supporting expense evidence to this case file.</p>
-            </div>
-            <form className="form-grid" onSubmit={handleDocumentUpload}>
-              <input
-                ref={documentInputRef}
-                id="case-receipt-document-upload"
-                className="file-input-hidden"
-                type="file"
-                multiple
-                onChange={(event) => setDocumentUploadFiles(Array.from(event.target.files || []))}
-              />
-              <label className={`upload-dropzone ${documentUploadFiles.length ? 'has-file' : ''}`} htmlFor="case-receipt-document-upload">
-                <span className="upload-dropzone-icon"><DocumentIcon size={22} /></span>
-                <span className="upload-dropzone-copy">
-                  <strong>{documentUploadLabel}</strong>
-                  <small>{documentUploadHelper}</small>
-                </span>
-                <span className="upload-dropzone-action">{documentUploadFiles.length ? 'Change files' : 'Browse files'}</span>
-              </label>
+              <CollapsiblePanel className="panel document-vault-panel app-grow" title="Receipt Evidence Vault" allowFocusView>
+                <article className="document-vault-layout">
+                  <section className="document-upload-card">
+                    <div>
+                      <h3 className="section-title"><UploadIcon size={16} />Receipt Evidence Upload</h3>
+                      <p className="muted-text">Attach hotel receipts, scanned folios, PDFs, images, or supporting expense evidence to this case file.</p>
+                    </div>
+                    <form className="form-grid" onSubmit={handleDocumentUpload}>
+                      <input
+                        ref={documentInputRef}
+                        id="case-receipt-document-upload"
+                        className="file-input-hidden"
+                        type="file"
+                        multiple
+                        onChange={(event) => setDocumentUploadFiles(Array.from(event.target.files || []))}
+                      />
+                      <label className={`upload-dropzone ${documentUploadFiles.length ? 'has-file' : ''}`} htmlFor="case-receipt-document-upload">
+                        <span className="upload-dropzone-icon"><DocumentIcon size={22} /></span>
+                        <span className="upload-dropzone-copy">
+                          <strong>{documentUploadLabel}</strong>
+                          <small>{documentUploadHelper}</small>
+                        </span>
+                        <span className="upload-dropzone-action">{documentUploadFiles.length ? 'Change files' : 'Browse files'}</span>
+                      </label>
 
-              {documentMessage && <div className="success-box">{documentMessage}</div>}
-              {documentError && <div className="error-box">{documentError}</div>}
-              <button type="submit" disabled={!documentUploadFiles.length || documentUploading}>
-                <span className="btn-inline"><UploadIcon size={14} />{documentUploading ? 'Uploading receipts...' : 'Upload Receipts'}</span>
-              </button>
-            </form>
-          </section>
+                      {documentMessage && <div className="success-box">{documentMessage}</div>}
+                      {documentError && <div className="error-box">{documentError}</div>}
+                      <button type="submit" disabled={!documentUploadFiles.length || documentUploading}>
+                        <span className="btn-inline"><UploadIcon size={14} />{documentUploading ? 'Uploading receipts...' : 'Upload Receipts'}</span>
+                      </button>
+                    </form>
+                  </section>
 
-          <section className="document-vault-main">
-            <div className="section-title-row">
-              <div>
-                <h3 className="section-title"><DocumentIcon size={16} />Stored Receipt Evidence</h3>
-                <p className="muted-text">Select a receipt to preview it. Use focused preview for zooming and left-button mouse panning.</p>
-              </div>
-              <span className="source-ref-pill">{detail.documents.length} files</span>
-            </div>
-
-            <div className="document-browser-grid">
-              <div className="document-list-panel" aria-label="Stored receipt files">
-                {!detail.documents.length && (
-                  <div className="empty-muted document-empty-state">
-                    <DocumentIcon size={34} />
-                    <strong>No receipt evidence uploaded yet.</strong>
-                    <span>Upload files from the left panel to build the case evidence pack.</span>
-                  </div>
-                )}
-                {detail.documents.map((document) => (
-                  <button
-                    key={document.document_id}
-                    type="button"
-                    className={`document-list-item${selectedDocument?.document_id === document.document_id ? ' is-active' : ''}`}
-                    onClick={() => setActiveDocumentId(document.document_id)}
-                  >
-                    <span className="document-list-icon"><DocumentIcon size={18} /></span>
-                    <span className="document-list-copy">
-                      <strong>{document.file_name}</strong>
-                      <small>{documentKindLabel(document)} · {formatDateTime(document.created_at)}</small>
-                    </span>
-                  </button>
-                ))}
-              </div>
-
-              <div className="document-preview-card">
-                {selectedDocument ? (
-                  <>
-                    <div className="document-preview-head">
+                  <section className="document-vault-main">
+                    <div className="section-title-row document-vault-title-row">
                       <div>
-                        <p className="eyebrow">{documentKindLabel(selectedDocument)}</p>
-                        <h4>{selectedDocument.file_name}</h4>
-                        <p className="muted-text">Stored {formatDateTime(selectedDocument.created_at)} · {selectedDocument.document_type || 'unclassified'}</p>
+                        <h3 className="section-title"><DocumentIcon size={16} />Stored Receipt Evidence</h3>
+                        <p className="muted-text">Select a receipt to preview it. Use focused preview for zooming and left-button mouse panning.</p>
                       </div>
-                      <div className="document-preview-actions">
-                        <a className="small-btn ghost-btn" href={getDocumentUrl(detail.receipt_id, selectedDocument.document_id)} target="_blank" rel="noreferrer">
-                          Open Original
-                        </a>
-                        <button type="button" className="small-btn" onClick={() => openFocusedDocument(selectedDocument)}>
-                          Focus Preview
-                        </button>
-                        <button type="button" className="small-btn danger-btn" onClick={() => handleDocumentDelete(selectedDocument)}>
-                          Remove
-                        </button>
+                      <span className="source-ref-pill">{detail.documents.length} files</span>
+                    </div>
+
+                    <div className="document-browser-grid">
+                      <div className="document-list-panel" aria-label="Stored receipt files">
+                        {!detail.documents.length && (
+                          <div className="empty-muted document-empty-state">
+                            <DocumentIcon size={34} />
+                            <strong>No receipt evidence uploaded yet.</strong>
+                            <span>Upload files from the left panel to build the case evidence pack.</span>
+                          </div>
+                        )}
+                        {detail.documents.map((document) => (
+                          <button
+                            key={document.document_id}
+                            type="button"
+                            className={`document-list-item${selectedDocument?.document_id === document.document_id ? ' is-active' : ''}`}
+                            onClick={() => setActiveDocumentId(document.document_id)}
+                          >
+                            <span className="document-list-icon"><DocumentIcon size={18} /></span>
+                            <span className="document-list-copy">
+                              <strong>{document.file_name}</strong>
+                              <small>{documentKindLabel(document)} · {formatDateTime(document.created_at)}</small>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="document-preview-card">
+                        {selectedDocument ? (
+                          <>
+                            <div className="document-preview-head">
+                              <div className="document-preview-title">
+                                <p className="eyebrow">{documentKindLabel(selectedDocument)}</p>
+                                <h4>{selectedDocument.file_name}</h4>
+                                <p className="muted-text">Stored {formatDateTime(selectedDocument.created_at)} · {selectedDocument.document_type || 'unclassified'}</p>
+                              </div>
+                              <div className="document-preview-actions">
+                                <a className="small-btn ghost-btn" href={getDocumentUrl(detail.receipt_id, selectedDocument.document_id)} target="_blank" rel="noreferrer">
+                                  Open Original
+                                </a>
+                                <button type="button" className="small-btn" onClick={() => openFocusedDocument(selectedDocument)}>
+                                  Focus Preview
+                                </button>
+                                <button type="button" className="small-btn danger-btn" onClick={() => handleDocumentDelete(selectedDocument)}>
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                            <DocumentPreview claimId={detail.receipt_id} document={selectedDocument} />
+                          </>
+                        ) : (
+                          <div className="empty-muted document-empty-state">
+                            <DocumentIcon size={34} />
+                            <strong>Select receipt evidence to preview.</strong>
+                          </div>
+                        )}
                       </div>
                     </div>
-                    <DocumentPreview claimId={detail.receipt_id} document={selectedDocument} />
-                  </>
-                ) : (
-                  <div className="empty-muted document-empty-state">
-                    <DocumentIcon size={34} />
-                    <strong>Select receipt evidence to preview.</strong>
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
-        </article>
-      </CollapsiblePanel>
-            )
-          },
-          {
-            id: 'findings',
-            label: 'Findings & Evidence',
-            eyebrow: 'Review',
-            children: (
-      <CollapsiblePanel className="panel analysis-evidence-panel app-grow" allowFocusView>
-        <article className="panel-scroll">
-          <div className="section-title-row">
-            <div>
-              <h3 className="section-title"><AnalyzeIcon size={16} />Findings and Evidence</h3>
-              <p className="muted-text">Each finding explains the issue, shows the business evidence, and highlights related records where relevant.</p>
-            </div>
-            <span className="source-ref-pill">{analysis.findings.length} findings</span>
-          </div>
-
-          <div className="receipt-profile-card">
-            <h4>Travel Expense Entry Details</h4>
-            <p className="muted-text">Business-friendly view of the imported travel expense table entry and key travel context.</p>
-            <dl className="fact-grid">
-              {receiptProfileRows.map((row) => (
-                <div key={row.label} className="fact-item">
-                  <dt>{row.label}</dt>
-                  <dd>{toFactValue(row.value)}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-
-          <div className="finding-evidence-grid">
-            {analysis.findings.map((finding) => (
-              <FindingEvidenceCard
-                key={`${finding.detection_type}-${finding.policy_reference || 'none'}`}
-                finding={finding}
-                evidence={evidenceByDetection.get(finding.detection_type)}
-                onTechnicalDetails={setActiveEvidence}
-                onRelatedRecord={setActiveRelatedRecord}
-              />
-            ))}
-          </div>
-        </article>
-      </CollapsiblePanel>
-
+                  </section>
+                </article>
+              </CollapsiblePanel>
             )
           },
           {
@@ -1038,150 +1070,157 @@ export function ClaimAnalysisPage() {
             label: 'Case File',
             eyebrow: 'Audit',
             children: (
-      <CollapsiblePanel className="panel two-col app-grow case-management-panel" title="Case Management and Audit Timeline" allowFocusView>
-        <article className="panel-scroll case-workspace">
-          <div className="section-title-row">
-            <h3 className="section-title"><UsersIcon size={16} />Case Management</h3>
-            <span className={sla.className}>{sla.label}</span>
-          </div>
+              <CollapsiblePanel className="panel app-grow case-management-panel" title="Case Management" allowFocusView>
+                <article className="panel-scroll case-workspace">
+                  <div className="section-title-row">
+                    <h3 className="section-title"><UsersIcon size={16} />Case Management</h3>
+                    <span className={sla.className}>{sla.label}</span>
+                  </div>
 
-          <div className="case-command-card">
-            <div>
-              <p className="eyebrow">Current Case State</p>
-              <h4>{detail.case_owner_id || 'Unassigned'} · {detail.case_priority || 'standard'}</h4>
-              <p className="muted-text">
-                SLA {formatDateTime(detail.case_sla_due_at)} · {detail.case_watchlist ? 'Watchlisted' : 'Not watchlisted'}
-              </p>
-            </div>
-            <span className={priorityChipClass(detail.case_priority)}>{detail.case_priority || 'standard'}</span>
-          </div>
-
-          {canReview ? (
-            <form className="case-form" onSubmit={handleSaveCase}>
-              <div className="split-row">
-                <label>
-                  Case Owner
-                  <input
-                    value={caseForm.ownerId}
-                    onChange={(event) => setCaseForm((current) => ({ ...current, ownerId: event.target.value }))}
-                    placeholder="reviewer@sabic.local"
-                  />
-                </label>
-                <label>
-                  Priority
-                  <select
-                    value={caseForm.priority}
-                    onChange={(event) => setCaseForm((current) => ({ ...current, priority: event.target.value as CasePriority }))}
-                  >
-                    <option value="standard">Standard</option>
-                    <option value="priority">Priority</option>
-                    <option value="urgent">Urgent</option>
-                    <option value="executive">Executive</option>
-                  </select>
-                </label>
-              </div>
-
-              <div className="split-row">
-                <label>
-                  SLA Due
-                  <input
-                    type="datetime-local"
-                    value={caseForm.slaDueAt}
-                    onChange={(event) => setCaseForm((current) => ({ ...current, slaDueAt: event.target.value }))}
-                  />
-                </label>
-                <label className="checkbox-inline case-watch-toggle">
-                  <input
-                    type="checkbox"
-                    checked={caseForm.watchlist}
-                    onChange={(event) => setCaseForm((current) => ({ ...current, watchlist: event.target.checked }))}
-                  />
-                  Add to reviewer watchlist
-                </label>
-              </div>
-
-              <label>
-                Tags
-                <input
-                  value={caseForm.tags}
-                  onChange={(event) => setCaseForm((current) => ({ ...current, tags: event.target.value }))}
-                  placeholder="executive review, expense variance, policy exception"
-                />
-              </label>
-
-              <label>
-                Next Action
-                <textarea
-                  value={caseForm.nextAction}
-                  onChange={(event) => setCaseForm((current) => ({ ...current, nextAction: event.target.value }))}
-                  rows={3}
-                  placeholder="Request supporting evidence, validate itinerary, escalate to HR business partner..."
-                />
-              </label>
-
-              {caseMessage && <div className="success-box">{caseMessage}</div>}
-              <button type="submit" disabled={caseSaving}>
-                <span className="btn-inline"><DocumentIcon size={14} />{caseSaving ? 'Saving case...' : 'Save Case File'}</span>
-              </button>
-            </form>
-          ) : (
-            <dl className="fact-grid">
-              {caseRows.map((row) => (
-                <div key={row.label} className="fact-item">
-                  <dt>{row.label}</dt>
-                  <dd>{toFactValue(row.value)}</dd>
-                </div>
-              ))}
-            </dl>
-          )}
-
-          {canReview && (
-            <dl className="fact-grid case-summary-grid">
-              {caseRows.map((row) => (
-                <div key={row.label} className="fact-item">
-                  <dt>{row.label}</dt>
-                  <dd>{toFactValue(row.value)}</dd>
-                </div>
-              ))}
-            </dl>
-          )}
-        </article>
-
-        <article className="panel-scroll">
-          <div className="section-title-row">
-            <h3 className="section-title"><DocumentIcon size={16} />Audit Timeline</h3>
-            <span className="source-ref-pill">{timeline?.events.length || 0} events</span>
-          </div>
-          <div className="case-timeline">
-            {(!timeline || timeline.events.length === 0) && (
-              <p className="empty-muted">No case events have been recorded yet.</p>
-            )}
-            {timeline?.events.map((event) => (
-              <article key={event.event_id} className={`timeline-item ${timelineToneClass(event.severity)}`}>
-                <span className="timeline-dot" aria-hidden="true" />
-                <div className="timeline-card">
-                  <div className="timeline-head">
+                  <div className="case-command-card">
                     <div>
-                      <h4>{event.title}</h4>
-                      <p>{formatDateTime(event.timestamp)}</p>
+                      <p className="eyebrow">Current Case State</p>
+                      <h4>{detail.case_owner_id || 'Unassigned'} · {detail.case_priority || 'standard'}</h4>
+                      <p className="muted-text">
+                        SLA {formatDateTime(detail.case_sla_due_at)} · {detail.case_watchlist ? 'Watchlisted' : 'Not watchlisted'}
+                      </p>
                     </div>
-                    <button className="small-btn ghost-btn" type="button" onClick={() => setActiveTimelineEvent(event)}>
-                      Details
-                    </button>
+                    <span className={priorityChipClass(detail.case_priority)}>{detail.case_priority || 'standard'}</span>
                   </div>
-                  <p className="timeline-description">{event.description}</p>
-                  <div className="timeline-meta">
-                    <span>{formatDetectionType(event.event_type)}</span>
-                    {event.actor && <span>Actor: {event.actor}</span>}
-                    {event.severity && <span>{event.severity}</span>}
-                  </div>
-                </div>
-              </article>
-            ))}
-          </div>
-        </article>
-      </CollapsiblePanel>
 
+                  {canReview ? (
+                    <form className="case-form" onSubmit={handleSaveCase}>
+                      <div className="split-row">
+                        <label>
+                          Case Owner
+                          <input
+                            value={caseForm.ownerId}
+                            onChange={(event) => setCaseForm((current) => ({ ...current, ownerId: event.target.value }))}
+                            placeholder="reviewer@sabic.local"
+                          />
+                        </label>
+                        <label>
+                          Priority
+                          <select
+                            value={caseForm.priority}
+                            onChange={(event) => setCaseForm((current) => ({ ...current, priority: event.target.value as CasePriority }))}
+                          >
+                            <option value="standard">Standard</option>
+                            <option value="priority">Priority</option>
+                            <option value="urgent">Urgent</option>
+                            <option value="executive">Executive</option>
+                          </select>
+                        </label>
+                      </div>
+
+                      <div className="split-row">
+                        <label>
+                          SLA Due
+                          <input
+                            type="datetime-local"
+                            value={caseForm.slaDueAt}
+                            onChange={(event) => setCaseForm((current) => ({ ...current, slaDueAt: event.target.value }))}
+                          />
+                        </label>
+                        <label className="checkbox-inline case-watch-toggle">
+                          <input
+                            type="checkbox"
+                            checked={caseForm.watchlist}
+                            onChange={(event) => setCaseForm((current) => ({ ...current, watchlist: event.target.checked }))}
+                          />
+                          Add to reviewer watchlist
+                        </label>
+                      </div>
+
+                      <label>
+                        Tags
+                        <input
+                          value={caseForm.tags}
+                          onChange={(event) => setCaseForm((current) => ({ ...current, tags: event.target.value }))}
+                          placeholder="executive review, expense variance, policy exception"
+                        />
+                      </label>
+
+                      <label>
+                        Next Action
+                        <textarea
+                          value={caseForm.nextAction}
+                          onChange={(event) => setCaseForm((current) => ({ ...current, nextAction: event.target.value }))}
+                          rows={3}
+                          placeholder="Request supporting evidence, validate itinerary, escalate to HR business partner..."
+                        />
+                      </label>
+
+                      {caseMessage && <div className="success-box">{caseMessage}</div>}
+                      <button type="submit" disabled={caseSaving}>
+                        <span className="btn-inline"><DocumentIcon size={14} />{caseSaving ? 'Saving case...' : 'Save Case File'}</span>
+                      </button>
+                    </form>
+                  ) : (
+                    <dl className="fact-grid">
+                      {caseRows.map((row) => (
+                        <div key={row.label} className="fact-item">
+                          <dt>{row.label}</dt>
+                          <dd>{toFactValue(row.value)}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+
+                  {canReview && (
+                    <dl className="fact-grid case-summary-grid">
+                      {caseRows.map((row) => (
+                        <div key={row.label} className="fact-item">
+                          <dt>{row.label}</dt>
+                          <dd>{toFactValue(row.value)}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                </article>
+              </CollapsiblePanel>
+            )
+          },
+          {
+            id: 'timeline',
+            label: 'Audit Timeline',
+            eyebrow: 'Audit',
+            children: (
+              <CollapsiblePanel className="panel app-grow audit-timeline-panel" title="Audit Timeline" allowFocusView>
+                <article className="panel-scroll">
+                  <div className="section-title-row">
+                    <h3 className="section-title"><DocumentIcon size={16} />Audit Timeline</h3>
+                    <span className="source-ref-pill">{timeline?.events.length || 0} events</span>
+                  </div>
+                  <div className="case-timeline">
+                    {(!timeline || timeline.events.length === 0) && (
+                      <p className="empty-muted">No case events have been recorded yet.</p>
+                    )}
+                    {timeline?.events.map((event) => (
+                      <article key={event.event_id} className={`timeline-item ${timelineToneClass(event.severity)}`}>
+                        <span className="timeline-dot" aria-hidden="true" />
+                        <div className="timeline-card">
+                          <div className="timeline-head">
+                            <div>
+                              <h4>{event.title}</h4>
+                              <p>{formatDateTime(event.timestamp)}</p>
+                            </div>
+                            <button className="small-btn ghost-btn" type="button" onClick={() => setActiveTimelineEvent(event)}>
+                              Details
+                            </button>
+                          </div>
+                          <p className="timeline-description">{event.description}</p>
+                          <div className="timeline-meta">
+                            <span>{formatDetectionType(event.event_type)}</span>
+                            {event.actor && <span>Actor: {event.actor}</span>}
+                            {event.severity && <span>{event.severity}</span>}
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </article>
+              </CollapsiblePanel>
             )
           },
           ...(canReview ? [{
