@@ -4,6 +4,8 @@ import {
   CaseManagementPayload,
   CaseTimeline,
   ClaimListResponse,
+  ClaimChatMessage,
+  ClaimChatResponse,
   ClaimAnalysis,
   ClaimDetail,
   ClaimSummary,
@@ -208,6 +210,53 @@ export async function fetchClaimAnalysis(claimId: string): Promise<ClaimAnalysis
 export async function fetchCaseTimeline(claimId: string): Promise<CaseTimeline> {
   const response = await api.get<CaseTimeline>(`/claims/${claimId}/case-timeline`)
   return response.data
+}
+
+export async function sendClaimChatMessage(
+  claimId: string,
+  message: string,
+  history: ClaimChatMessage[]
+): Promise<ClaimChatResponse> {
+  const response = await api.post<ClaimChatResponse>(`/claims/${claimId}/chat`, { message, history })
+  return response.data
+}
+
+export async function streamClaimChatMessage(
+  claimId: string,
+  message: string,
+  history: ClaimChatMessage[],
+  onChunk: (chunk: string) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  const response = await fetch(`${api.defaults.baseURL}/claims/${claimId}/chat/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Demo-Role': getStoredDemoRole()
+    },
+    body: JSON.stringify({ message, history }),
+    signal
+  })
+
+  if (!response.ok) {
+    throw new Error(`Chat request failed with status ${response.status}`)
+  }
+
+  if (!response.body) {
+    return
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    onChunk(decoder.decode(value, { stream: true }))
+  }
+
+  const remainder = decoder.decode()
+  if (remainder) onChunk(remainder)
 }
 
 export async function updateCaseManagement(

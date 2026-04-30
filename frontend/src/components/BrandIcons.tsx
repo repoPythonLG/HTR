@@ -103,6 +103,15 @@ export function AnalyzeIcon(props: IconProps) {
   )
 }
 
+export function SendIcon(props: IconProps) {
+  return (
+    <StrokeIcon {...props}>
+      <path d="M4 12l16-8-5 16-3-7-8-1z" />
+      <path d="M12 13l8-9" />
+    </StrokeIcon>
+  )
+}
+
 export function UploadIcon(props: IconProps) {
   return (
     <StrokeIcon {...props}>

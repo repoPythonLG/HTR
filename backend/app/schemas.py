@@ -252,6 +252,23 @@ class ReviewActionIn(BaseModel):
     disposition_reason: Optional[str] = None
 
 
+class ChatMessageIn(BaseModel):
+    role: str = Field(pattern="^(user|assistant)$")
+    content: str = Field(min_length=1, max_length=8000)
+
+
+class ClaimChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=8000)
+    history: List[ChatMessageIn] = Field(default_factory=list, max_length=12)
+
+
+class ClaimChatResponse(BaseModel):
+    answer: str
+    model: str
+    context_sources: List[str]
+    extraction_status: Dict[str, Any] = Field(default_factory=dict)
+
+
 class PolicyRuleIn(BaseModel):
     key: str
     name: str

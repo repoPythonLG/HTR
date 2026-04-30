@@ -1,12 +1,12 @@
 import dayjs from 'dayjs'
-import { FormEvent, PointerEvent, useEffect, useRef, useState, WheelEvent } from 'react'
+import { FormEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent, useEffect, useRef, useState, WheelEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { deleteClaimDocument, fetchCaseTimeline, fetchClaimAnalysis, fetchClaimDetail, fetchDocumentBlob, getDocumentUrl, submitReviewAction, updateCaseManagement, uploadClaimDocuments } from '../api/client'
-import { AnalyzeIcon, DocumentIcon, RiskIcon, UploadIcon, UsersIcon } from '../components/BrandIcons'
+import { deleteClaimDocument, fetchCaseTimeline, fetchClaimAnalysis, fetchClaimDetail, fetchDocumentBlob, getDocumentUrl, streamClaimChatMessage, submitReviewAction, updateCaseManagement, uploadClaimDocuments } from '../api/client'
+import { AnalyzeIcon, DocumentIcon, RiskIcon, SendIcon, UploadIcon, UsersIcon } from '../components/BrandIcons'
 import { CollapsiblePanel } from '../components/CollapsiblePanel'
 import { PageTabs } from '../components/PageTabs'
 import { useAuth } from '../context/AuthContext'
-import { CasePriority, CaseTimeline, CaseTimelineEvent, ClaimAnalysis, ClaimDetail, ClaimSummary, DocumentRecord } from '../types'
+import { CasePriority, CaseTimeline, CaseTimelineEvent, ClaimAnalysis, ClaimChatMessage, ClaimDetail, ClaimSummary, DocumentRecord } from '../types'
 import { formatDetectionType } from '../utils/formatters'
 
 function severityClass(severity: string) {
@@ -605,7 +605,12 @@ export function ClaimAnalysisPage() {
   const [caseForm, setCaseForm] = useState<CaseFormState>(initialCaseForm)
   const [caseSaving, setCaseSaving] = useState(false)
   const [caseMessage, setCaseMessage] = useState<string>()
+  const [chatMessages, setChatMessages] = useState<ClaimChatMessage[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const [chatError, setChatError] = useState<string>()
   const documentInputRef = useRef<HTMLInputElement | null>(null)
+  const chatAbortRef = useRef<AbortController | null>(null)
   const panStartRef = useRef<{ pointerId: number; x: number; y: number; offsetX: number; offsetY: number } | null>(null)
 
   const canReview = user?.role === 'reviewer' || user?.role === 'administrator'
@@ -668,6 +673,89 @@ export function ClaimAnalysisPage() {
       return user?.employee_code || user?.username || ''
     })
   }, [canReview, user?.employee_code, user?.username])
+
+  useEffect(() => {
+    chatAbortRef.current?.abort()
+    chatAbortRef.current = null
+    setChatMessages([])
+    setChatInput('')
+    setChatError(undefined)
+  }, [activeReceiptId])
+
+  async function sendChat() {
+    if (!activeReceiptId) return
+    if (chatLoading) return
+
+    const message = chatInput.trim()
+    if (!message) return
+
+    const history = chatMessages
+    const nextMessages: ClaimChatMessage[] = [...history, { role: 'user', content: message }, { role: 'assistant', content: '' }]
+    const assistantIndex = nextMessages.length - 1
+    const controller = new AbortController()
+
+    chatAbortRef.current = controller
+    setChatMessages(nextMessages)
+    setChatInput('')
+    setChatError(undefined)
+    setChatLoading(true)
+
+    try {
+      await streamClaimChatMessage(
+        activeReceiptId,
+        message,
+        history,
+        (chunk) => {
+          setChatMessages((current) => {
+            const updated = [...current]
+            const assistantMessage = updated[assistantIndex]
+            if (!assistantMessage || assistantMessage.role !== 'assistant') return current
+            updated[assistantIndex] = {
+              ...assistantMessage,
+              content: `${assistantMessage.content}${chunk}`
+            }
+            return updated
+          })
+        },
+        controller.signal
+      )
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return
+      setChatError(String(err))
+      setChatMessages(history)
+      setChatInput(message)
+    } finally {
+      if (chatAbortRef.current === controller) {
+        chatAbortRef.current = null
+      }
+      setChatLoading(false)
+    }
+  }
+
+  function handleChatSubmit(event: FormEvent) {
+    event.preventDefault()
+    void sendChat()
+  }
+
+  function handleChatKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== 'Enter' || event.shiftKey) return
+    event.preventDefault()
+    void sendChat()
+  }
+
+  function stopChat() {
+    chatAbortRef.current?.abort()
+    chatAbortRef.current = null
+    setChatMessages((current) => {
+      const updated = [...current]
+      const last = updated[updated.length - 1]
+      if (last?.role === 'assistant' && !last.content.trim()) {
+        updated[updated.length - 1] = { ...last, content: 'Response stopped.' }
+      }
+      return updated
+    })
+    setChatLoading(false)
+  }
 
   async function handleSubmitReview(event: FormEvent) {
     event.preventDefault()
@@ -1060,6 +1148,56 @@ export function ClaimAnalysisPage() {
                         )}
                       </div>
                     </div>
+                  </section>
+                </article>
+              </CollapsiblePanel>
+            )
+          },
+          {
+            id: 'chat',
+            label: 'Chat',
+            eyebrow: 'LLM',
+            children: (
+              <CollapsiblePanel className="panel entry-chat-panel app-grow" title="Entry Chat" allowFocusView>
+                <article className="entry-chat-layout">
+                  <section className="entry-chat-console">
+                    <div className="entry-chat-messages" aria-live="polite">
+                      {!chatMessages.length && (
+                        <div className="chat-empty-state">
+                          <AnalyzeIcon size={28} />
+                          <strong>Ask about this entry, its findings, receipts, case file, decisions, or audit timeline.</strong>
+                          <span>Example: explain why this entry is high risk and what evidence I should verify first.</span>
+                        </div>
+                      )}
+                      {chatMessages.map((message, index) => (
+                        <div key={`${message.role}-${index}`} className={`chat-message ${message.role}`}>
+                          <span>{message.role === 'user' ? 'Reviewer' : 'Assistant'}</span>
+                          <p>{message.content || (chatLoading && message.role === 'assistant' ? 'Thinking...' : '')}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <form className="entry-chat-form" onSubmit={handleChatSubmit}>
+                      {chatError && <div className="error-box">{chatError}</div>}
+                      <label className="chatgpt-composer" aria-label="Ask a question about this travel expense entry">
+                        <textarea
+                          value={chatInput}
+                          onChange={(event) => setChatInput(event.target.value)}
+                          onKeyDown={handleChatKeyDown}
+                          rows={1}
+                          placeholder="How can I help you today?"
+                        />
+                        {chatLoading ? (
+                          <button type="button" className="chatgpt-composer-send is-stop" onClick={stopChat} aria-label="Stop response">
+                            <span />
+                          </button>
+                        ) : (
+                          <button type="submit" className="chatgpt-composer-send" disabled={!chatInput.trim()} aria-label="Send message">
+                            <SendIcon size={19} />
+                          </button>
+                        )}
+                      </label>
+                    </form>
                   </section>
                 </article>
               </CollapsiblePanel>

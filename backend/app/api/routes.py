@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
@@ -21,6 +21,8 @@ from app.schemas import (
     CaseManagementOut,
     CaseTimelineEventOut,
     CaseTimelineOut,
+    ClaimChatRequest,
+    ClaimChatResponse,
     ClaimListOut,
     ClaimAnalysisOut,
     ClaimDetailOut,
@@ -49,6 +51,7 @@ from app.schemas import (
 )
 from app.services.analysis import analyze_claim
 from app.services.auth import get_current_user, require_roles
+from app.services.chat import answer_claim_chat, stream_claim_chat
 from app.services.excel_import import parse_claim_rows, parse_spreadsheet_preview
 from app.services.policy import (
     extract_rules_from_policy_text,
@@ -1020,6 +1023,74 @@ def claim_analysis_view(
         findings=findings,
         evidence_summary=evidence_summary,
         recommendations=recommendations,
+    )
+
+
+@router.post("/claims/{claim_id}/chat", response_model=ClaimChatResponse)
+def claim_chat(
+    claim_id: str,
+    payload: ClaimChatRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("employee", "reviewer", "administrator")),
+):
+    claim = (
+        db.execute(
+            select(Claim)
+            .options(
+                joinedload(Claim.documents).joinedload(ReceiptDocument.extracted_fields),
+                joinedload(Claim.detections),
+                joinedload(Claim.risk_assessment),
+                joinedload(Claim.reviewer_decisions),
+                joinedload(Claim.case_audit_events),
+            )
+            .where(Claim.claim_id == claim_id)
+        )
+        .unique()
+        .scalars()
+        .first()
+    )
+    if not claim:
+        raise HTTPException(status_code=404, detail="Travel expense entry not found")
+
+    _enforce_employee_claim_scope(current_user, claim)
+    result = answer_claim_chat(
+        claim,
+        payload.message,
+        [item.model_dump() for item in payload.history],
+    )
+    return ClaimChatResponse(**result)
+
+
+@router.post("/claims/{claim_id}/chat/stream")
+def claim_chat_stream(
+    claim_id: str,
+    payload: ClaimChatRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("employee", "reviewer", "administrator")),
+):
+    claim = (
+        db.execute(
+            select(Claim)
+            .options(
+                joinedload(Claim.documents).joinedload(ReceiptDocument.extracted_fields),
+                joinedload(Claim.detections),
+                joinedload(Claim.risk_assessment),
+                joinedload(Claim.reviewer_decisions),
+                joinedload(Claim.case_audit_events),
+            )
+            .where(Claim.claim_id == claim_id)
+        )
+        .unique()
+        .scalars()
+        .first()
+    )
+    if not claim:
+        raise HTTPException(status_code=404, detail="Travel expense entry not found")
+
+    _enforce_employee_claim_scope(current_user, claim)
+    return StreamingResponse(
+        stream_claim_chat(claim, payload.message, [item.model_dump() for item in payload.history]),
+        media_type="text/plain; charset=utf-8",
     )
 
 

@@ -313,6 +313,18 @@ export type ClaimAnalysis = {
   recommendations: string[]
 }
 
+export type ClaimChatMessage = {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export type ClaimChatResponse = {
+  answer: string
+  model: string
+  context_sources: string[]
+  extraction_status: Record<string, unknown>
+}
+
 export type ExcelImportResult = {
   imported_claims: number
   imported_receipts: number
