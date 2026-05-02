@@ -2823,25 +2823,28 @@ button:disabled {
   white-space: pre-wrap;
 }
 
-.chat-message span {
+.chat-role-label {
   color: var(--text-soft);
   font-size: 0.72rem;
   font-weight: 900;
   text-transform: uppercase;
 }
 
-.chat-message p {
+.chat-message-content {
+  color: var(--text);
   margin: 0;
   line-height: 1.46;
 }
 
 .chat-message strong {
+  color: var(--text);
   font-weight: 950;
 }
 
 .chat-markdown-line {
   display: block;
   min-height: 1.46em;
+  white-space: pre-wrap;
 }
 
 .chat-message.user {

@@ -81,17 +81,32 @@ function formatMoney(value?: number | null, currency = 'SAR') {
   return `${value.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`
 }
 
+function renderMarkdownInline(line: string, lineIndex: number): ReactNode {
+  const parts: ReactNode[] = []
+  const pattern = /\*\*([^*]+)\*\*/g
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+
+  while ((match = pattern.exec(line)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(<span key={`text-${lineIndex}-${lastIndex}`}>{line.slice(lastIndex, match.index)}</span>)
+    }
+    parts.push(<strong key={`bold-${lineIndex}-${match.index}`}>{match[1]}</strong>)
+    lastIndex = match.index + match[0].length
+  }
+
+  if (lastIndex < line.length) {
+    parts.push(<span key={`text-${lineIndex}-${lastIndex}`}>{line.slice(lastIndex)}</span>)
+  }
+
+  return parts.length ? parts : '\u00a0'
+}
+
 function renderMarkdownLite(text: string): ReactNode {
   return text.split('\n').map((line, lineIndex) => {
-    const parts = line.split(/(\*\*[^*]+\*\*)/g).filter(Boolean)
     return (
       <span key={`line-${lineIndex}`} className="chat-markdown-line">
-        {parts.map((part, partIndex) => {
-          if (part.startsWith('**') && part.endsWith('**')) {
-            return <strong key={`part-${lineIndex}-${partIndex}`}>{part.slice(2, -2)}</strong>
-          }
-          return <span key={`part-${lineIndex}-${partIndex}`}>{part}</span>
-        })}
+        {renderMarkdownInline(line, lineIndex)}
       </span>
     )
   })
@@ -1216,8 +1231,10 @@ export function ClaimAnalysisPage() {
                       )}
                       {chatMessages.map((message, index) => (
                         <div key={`${message.role}-${index}`} className={`chat-message ${message.role}`}>
-                          <span>{message.role === 'user' ? 'Reviewer' : 'Assistant'}</span>
-                          <p>{renderMarkdownLite(message.content || (chatLoading && message.role === 'assistant' ? 'Thinking...' : ''))}</p>
+                          <span className="chat-role-label">{message.role === 'user' ? 'Reviewer' : 'Assistant'}</span>
+                          <div className="chat-message-content">
+                            {renderMarkdownLite(message.content || (chatLoading && message.role === 'assistant' ? 'Thinking...' : ''))}
+                          </div>
                         </div>
                       ))}
                     </div>
