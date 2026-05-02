@@ -1,0 +1,18 @@
+{
+  "purpose": "Synthetic receipt/invoice evidence for Docling, EasyOCR, upload, and entry chat testing.",
+  "primary_entry_id": "9da64c7e-fad1-4379-b813-5d67b61e565f",
+  "highest_risk_score": 97.0,
+  "files": [
+    "/Users/tomman/TIDY/SABIC/HR/images/test_receipts/critical_entry_13770_phoenix_invoice_clean.png",
+    "/Users/tomman/TIDY/SABIC/HR/images/test_receipts/critical_entry_13770_phoenix_invoice_scanned.jpg",
+    "/Users/tomman/TIDY/SABIC/HR/images/test_receipts/overlap_entry_13301_abu_dhabi_invoice.png",
+    "/Users/tomman/TIDY/SABIC/HR/images/test_receipts/critical_entry_13770_phoenix_invoice_bundle.pdf",
+    "/Users/tomman/TIDY/SABIC/HR/images/test_receipts/critical_entry_13770_ground_truth.txt"
+  ],
+  "suggested_chat_prompts": [
+    "Why is this entry critical?",
+    "Compare the uploaded receipt evidence with the table entry.",
+    "Which dates overlap with another trip?",
+    "What should I verify before approving or rejecting this entry?"
+  ]
+}

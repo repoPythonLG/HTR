@@ -325,6 +325,19 @@ export type ClaimChatResponse = {
   extraction_status: Record<string, unknown>
 }
 
+export type ClaimChatDebugResponse = {
+  model: string
+  base_url?: string | null
+  settings_ready: boolean
+  context_sources: string[]
+  extraction_status: Record<string, unknown>
+  messages: Array<{
+    role: string
+    content: string
+  }>
+  case_context: Record<string, unknown>
+}
+
 export type ExcelImportResult = {
   imported_claims: number
   imported_receipts: number

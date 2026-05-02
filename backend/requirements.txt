@@ -13,5 +13,7 @@ httpx==0.27.2
 pytest==8.3.3
 langchain==0.3.27
 langchain-openai==0.3.28
+numpy==1.26.4
+opencv-python-headless==4.11.0.86
 docling==2.39.0
 easyocr==1.7.2

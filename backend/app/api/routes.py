@@ -22,6 +22,7 @@ from app.schemas import (
     CaseTimelineEventOut,
     CaseTimelineOut,
     ClaimChatRequest,
+    ClaimChatDebugResponse,
     ClaimChatResponse,
     ClaimListOut,
     ClaimAnalysisOut,
@@ -49,9 +50,9 @@ from app.schemas import (
     UploadResponse,
     UserOut,
 )
-from app.services.analysis import analyze_claim
+from app.services.analysis import analyze_claim, process_document
 from app.services.auth import get_current_user, require_roles
-from app.services.chat import answer_claim_chat, stream_claim_chat
+from app.services.chat import answer_claim_chat, build_claim_chat_debug, stream_claim_chat
 from app.services.excel_import import parse_claim_rows, parse_spreadsheet_preview
 from app.services.policy import (
     extract_rules_from_policy_text,
@@ -291,15 +292,16 @@ def upload_claim(
     uploaded_count = 0
     for file in files:
         file_path, mime_type, image_hash = save_upload(claim.claim_id, file)
-        db.add(
-            ReceiptDocument(
-                claim_id=claim.claim_id,
-                file_name=file.filename or "document",
-                file_path=file_path,
-                mime_type=mime_type,
-                image_hash=image_hash,
-            )
+        document = ReceiptDocument(
+            claim_id=claim.claim_id,
+            file_name=file.filename or "document",
+            file_path=file_path,
+            mime_type=mime_type,
+            image_hash=image_hash,
         )
+        db.add(document)
+        db.flush()
+        process_document(db, document)
         uploaded_count += 1
 
     db.commit()
@@ -1061,6 +1063,37 @@ def claim_chat(
     return ClaimChatResponse(**result)
 
 
+@router.post("/claims/{claim_id}/chat/debug", response_model=ClaimChatDebugResponse)
+def claim_chat_debug(
+    claim_id: str,
+    payload: ClaimChatRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("employee", "reviewer", "administrator")),
+):
+    claim = (
+        db.execute(
+            select(Claim)
+            .options(
+                joinedload(Claim.documents).joinedload(ReceiptDocument.extracted_fields),
+                joinedload(Claim.detections),
+                joinedload(Claim.risk_assessment),
+                joinedload(Claim.reviewer_decisions),
+                joinedload(Claim.case_audit_events),
+            )
+            .where(Claim.claim_id == claim_id)
+        )
+        .unique()
+        .scalars()
+        .first()
+    )
+    if not claim:
+        raise HTTPException(status_code=404, detail="Travel expense entry not found")
+
+    _enforce_employee_claim_scope(current_user, claim)
+    result = build_claim_chat_debug(claim, payload.message, [item.model_dump() for item in payload.history])
+    return ClaimChatDebugResponse(**result)
+
+
 @router.post("/claims/{claim_id}/chat/stream")
 def claim_chat_stream(
     claim_id: str,
@@ -1154,6 +1187,7 @@ def upload_claim_documents(
         )
         db.add(document)
         db.flush()
+        process_document(db, document)
         uploaded_ids.append(document.document_id)
 
         _record_case_event(

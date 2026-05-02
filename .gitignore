@@ -9,6 +9,8 @@ __pycache__/
 # DB and runtime
 *.db
 *.sqlite3
+.env
+backend/.env
 /data/
 /backend/data/
 

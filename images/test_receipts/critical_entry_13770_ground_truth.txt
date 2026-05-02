@@ -1,0 +1,33 @@
+Synthetic receipt evidence set for Travel Expenses Guard QA
+
+Primary dangerous entry
+Claim / Entry ID: 9da64c7e-fad1-4379-b813-5d67b61e565f
+Trip Number: 13770
+Employee: Employee 166305 (166305)
+Destination: Phoenix, USA
+Check-in: 21 Jul 2025
+Check-out: 30 Jul 2025
+Nights: 10
+Hotel: Desert Ridge Executive Suites
+Invoice: DRX-PHX-2025-13770
+Total: 43,454.09 SAR
+Risk: CRITICAL 97.0 pts
+
+Related overlapping entry
+Claim / Entry ID: 88f22231-e2d0-47ff-b5a9-7837f3443ea0
+Trip Number: 13301
+Employee: Employee 166305 (166305)
+Destination: Abu Dhabi, UAE
+Check-in: 14 Jul 2025
+Check-out: 23 Jul 2025
+Nights: 10
+Hotel: Corniche Training Residence
+Invoice: CTR-AUH-2025-13301
+Total: 18,150.05 SAR
+Overlap: 21 Jul 2025 to 23 Jul 2025 with primary Phoenix entry.
+
+Expected chat questions:
+- Why is this entry critical?
+- Compare uploaded receipt evidence with the table entry.
+- Which dates overlap with another trip?
+- What should the reviewer verify before decision?

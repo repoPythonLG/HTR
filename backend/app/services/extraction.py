@@ -25,14 +25,56 @@ class ExtractionResult:
     page_count: int
 
 
-DATE_RE = re.compile(r"\b(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4})\b")
-TOTAL_RE = re.compile(r"(?:total|amount|grand total)\s*[:\-]?\s*(?:SAR|USD|EUR|GBP)?\s*([0-9]+(?:\.[0-9]{1,2})?)", re.IGNORECASE)
-TAX_RE = re.compile(r"(?:tax|vat)\s*[:\-]?\s*(?:SAR|USD|EUR|GBP)?\s*([0-9]+(?:\.[0-9]{1,2})?)", re.IGNORECASE)
+DATE_RE = re.compile(
+    r"\b(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})\b"
+)
+MONEY_VALUE_RE = r"([0-9][0-9,]*(?:\.[0-9]{1,2})?)"
+TOTAL_DUE_RE = re.compile(
+    rf"(?:total\s+due|grand\s+total|balance\s+due)\s*[:\-]?\s*(?:SAR|USD|EUR|GBP)?\s*{MONEY_VALUE_RE}(?:\s*(?:SAR|USD|EUR|GBP))?",
+    re.IGNORECASE,
+)
+TOTAL_RE = re.compile(rf"\btotal\b\s*[:\-]?\s*(?:SAR|USD|EUR|GBP)?\s*{MONEY_VALUE_RE}(?:\s*(?:SAR|USD|EUR|GBP))?", re.IGNORECASE)
+TAX_RE = re.compile(rf"(?:tax|vat|taxes\s+fees)\s*[:\-]?\s*(?:SAR|USD|EUR|GBP)?\s*{MONEY_VALUE_RE}", re.IGNORECASE)
 RECEIPT_RE = re.compile(r"(?:receipt|invoice)\s*(?:no|number|#)?\s*[:\-]?\s*([A-Z0-9\-]{4,})", re.IGNORECASE)
-ROOM_RATE_RE = re.compile(r"(?:room\s*rate|nightly\s*rate)\s*[:\-]?\s*(?:SAR|USD|EUR|GBP)?\s*([0-9]+(?:\.[0-9]{1,2})?)", re.IGNORECASE)
+ROOM_RATE_RE = re.compile(rf"(?:room\s*rate|nightly\s*rate)\s*[:\-]?\s*(?:SAR|USD|EUR|GBP)?\s*{MONEY_VALUE_RE}", re.IGNORECASE)
 NIGHTS_RE = re.compile(r"(?:nights?)\s*[:\-]?\s*([0-9]{1,2})", re.IGNORECASE)
-CITY_RE = re.compile(r"\b(Riyadh|Jeddah|Dammam|Dubai|Abu Dhabi|London|Paris|Berlin|Singapore|New York)\b", re.IGNORECASE)
+CITY_RE = re.compile(r"\b(Riyadh|Jeddah|Dammam|Dubai|Abu Dhabi|London|Paris|Berlin|Singapore|New York|Phoenix|Doha|Madrid|Amsterdam|Khobar|Jubail)\b", re.IGNORECASE)
 FLIGHT_CLASS_RE = re.compile(r"\b(business|economy|first)\s+class\b", re.IGNORECASE)
+
+
+def _is_useful_text(text: str, file_name: str = "") -> bool:
+    cleaned = " ".join(text.split())
+    if len(cleaned) < 40:
+        return False
+    if file_name and cleaned.casefold() == file_name.casefold():
+        return False
+    lower = cleaned.casefold()
+    useful_tokens = ["invoice", "receipt", "folio", "total", "tax", "check-in", "check-out", "hotel", "amount", "sar"]
+    return sum(1 for token in useful_tokens if token in lower) >= 2
+
+
+def _extract_docling_text(path: Path) -> tuple[str, int]:
+    from docling.document_converter import DocumentConverter
+
+    converted = DocumentConverter().convert(str(path))
+    text = converted.document.export_to_markdown()
+    return text.strip(), 1
+
+
+def _extract_easyocr_text(path: Path) -> tuple[str, int]:
+    import easyocr
+
+    reader = easyocr.Reader(["en"], gpu=False, verbose=False)
+    lines = reader.readtext(str(path), detail=0, paragraph=True)
+    return "\n".join(str(line) for line in lines if line).strip(), 1
+
+
+def _parse_money(value: str) -> str:
+    return value.replace(",", "").strip()
+
+
+def _clean_heading(value: str) -> str:
+    return re.sub(r"^[#\-\s]+", "", value).strip()
 
 
 def _extract_pdf_text(path: Path) -> tuple[str, int]:
@@ -70,22 +112,38 @@ def _extract_fields(text: str, file_name: str) -> list[FieldCandidate]:
     fields: list[FieldCandidate] = []
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     if lines:
-        fields.append(_candidate("merchant", lines[0][:120], 0.55))
+        merchant = next(
+            (
+                line
+                for line in lines[:8]
+                if not line.lower().startswith(("hotel folio", "invoice", "receipt", "bill to", "check-in", "check-out"))
+            ),
+            lines[0],
+        )
+        merchant = _clean_heading(merchant)
+        fields.append(_candidate("merchant", merchant[:120], 0.78 if merchant != file_name else 0.45))
 
     for match in DATE_RE.finditer(text):
         fields.append(_candidate("date", match.group(1), 0.78))
         break
 
+    total_match = TOTAL_DUE_RE.search(text) or TOTAL_RE.search(text)
+    if total_match:
+        fields.append(_candidate("total", _parse_money(total_match.group(1)), 0.9 if TOTAL_DUE_RE.search(text) else 0.78))
+
     for regex, name, conf in [
-        (TOTAL_RE, "total", 0.82),
         (TAX_RE, "tax", 0.75),
-        (RECEIPT_RE, "receipt_number", 0.83),
         (ROOM_RATE_RE, "room_rate", 0.8),
         (NIGHTS_RE, "nights", 0.72),
     ]:
         match = regex.search(text)
         if match:
-            fields.append(_candidate(name, match.group(1), conf))
+            value = _parse_money(match.group(1)) if name in {"total", "tax", "room_rate"} else match.group(1)
+            fields.append(_candidate(name, value, conf))
+
+    receipt_match = RECEIPT_RE.search(text)
+    if receipt_match and receipt_match.group(1).lower() not in {"date", "total"}:
+        fields.append(_candidate("receipt_number", receipt_match.group(1), 0.83))
 
     city_match = CITY_RE.search(text)
     if city_match:
@@ -108,23 +166,46 @@ def extract_document(file_path: str, mime_type: str, file_name: str) -> Extracti
     path = Path(file_path)
     text = ""
     page_count = 1
+    extraction_errors: list[str] = []
 
     if mime_type == "application/pdf" or path.suffix.lower() == ".pdf":
         try:
             text, page_count = _extract_pdf_text(path)
-        except Exception:
+        except Exception as exc:
+            extraction_errors.append(f"pypdf: {exc}")
             text = ""
             page_count = 1
+
+        if not _is_useful_text(text, file_name):
+            try:
+                text, docling_page_count = _extract_docling_text(path)
+                page_count = max(page_count, docling_page_count)
+            except Exception as exc:
+                extraction_errors.append(f"docling: {exc}")
+    elif mime_type.startswith("image/") or path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}:
+        try:
+            text, page_count = _extract_docling_text(path)
+        except Exception as exc:
+            extraction_errors.append(f"docling: {exc}")
+            text = ""
+
+        if not _is_useful_text(text, file_name):
+            try:
+                text, page_count = _extract_easyocr_text(path)
+            except Exception as exc:
+                extraction_errors.append(f"easyocr: {exc}")
     else:
-        # OCR is intentionally optional for local setup. We use file text and name heuristics
-        # so the pipeline remains deterministic and testable even without OCR dependencies.
         try:
             text = path.read_text(encoding="utf-8", errors="ignore")
-        except Exception:
+        except Exception as exc:
+            extraction_errors.append(f"text: {exc}")
             text = ""
 
     if not text:
-        text = f"{file_name}"
+        text = (
+            f"Extraction failed for {file_name}. "
+            f"Errors: {'; '.join(extraction_errors) if extraction_errors else 'No extractor returned text.'}"
+        )
 
     document_type = _guess_doc_type(text, file_name)
     fields = _extract_fields(text, file_name)

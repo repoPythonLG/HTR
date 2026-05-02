@@ -4,6 +4,7 @@ import {
   CaseManagementPayload,
   CaseTimeline,
   ClaimListResponse,
+  ClaimChatDebugResponse,
   ClaimChatMessage,
   ClaimChatResponse,
   ClaimAnalysis,
@@ -218,6 +219,15 @@ export async function sendClaimChatMessage(
   history: ClaimChatMessage[]
 ): Promise<ClaimChatResponse> {
   const response = await api.post<ClaimChatResponse>(`/claims/${claimId}/chat`, { message, history })
+  return response.data
+}
+
+export async function fetchClaimChatDebug(
+  claimId: string,
+  message: string,
+  history: ClaimChatMessage[]
+): Promise<ClaimChatDebugResponse> {
+  const response = await api.post<ClaimChatDebugResponse>(`/claims/${claimId}/chat/debug`, { message, history })
   return response.data
 }
 

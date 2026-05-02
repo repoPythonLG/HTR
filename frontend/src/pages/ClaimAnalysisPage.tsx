@@ -1,12 +1,12 @@
 import dayjs from 'dayjs'
-import { FormEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent, useEffect, useRef, useState, WheelEvent } from 'react'
+import { FormEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent, ReactNode, useEffect, useRef, useState, WheelEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { deleteClaimDocument, fetchCaseTimeline, fetchClaimAnalysis, fetchClaimDetail, fetchDocumentBlob, getDocumentUrl, streamClaimChatMessage, submitReviewAction, updateCaseManagement, uploadClaimDocuments } from '../api/client'
+import { deleteClaimDocument, fetchCaseTimeline, fetchClaimAnalysis, fetchClaimChatDebug, fetchClaimDetail, fetchDocumentBlob, getDocumentUrl, streamClaimChatMessage, submitReviewAction, updateCaseManagement, uploadClaimDocuments } from '../api/client'
 import { AnalyzeIcon, DocumentIcon, RiskIcon, SendIcon, UploadIcon, UsersIcon } from '../components/BrandIcons'
 import { CollapsiblePanel } from '../components/CollapsiblePanel'
 import { PageTabs } from '../components/PageTabs'
 import { useAuth } from '../context/AuthContext'
-import { CasePriority, CaseTimeline, CaseTimelineEvent, ClaimAnalysis, ClaimChatMessage, ClaimDetail, ClaimSummary, DocumentRecord } from '../types'
+import { CasePriority, CaseTimeline, CaseTimelineEvent, ClaimAnalysis, ClaimChatDebugResponse, ClaimChatMessage, ClaimDetail, ClaimSummary, DocumentRecord } from '../types'
 import { formatDetectionType } from '../utils/formatters'
 
 function severityClass(severity: string) {
@@ -79,6 +79,28 @@ function formatTripRange(start?: string | null, end?: string | null) {
 function formatMoney(value?: number | null, currency = 'SAR') {
   if (value === null || value === undefined || !Number.isFinite(value)) return '—'
   return `${value.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`
+}
+
+function renderMarkdownLite(text: string): ReactNode {
+  return text.split('\n').map((line, lineIndex) => {
+    const parts = line.split(/(\*\*[^*]+\*\*)/g).filter(Boolean)
+    return (
+      <span key={`line-${lineIndex}`} className="chat-markdown-line">
+        {parts.map((part, partIndex) => {
+          if (part.startsWith('**') && part.endsWith('**')) {
+            return <strong key={`part-${lineIndex}-${partIndex}`}>{part.slice(2, -2)}</strong>
+          }
+          return <span key={`part-${lineIndex}-${partIndex}`}>{part}</span>
+        })}
+      </span>
+    )
+  })
+}
+
+type ChatDebugState = {
+  request?: ClaimChatDebugResponse
+  response?: string
+  question?: string
 }
 
 type DocumentPreviewKind = 'image' | 'pdf' | 'text' | 'spreadsheet' | 'other'
@@ -609,6 +631,8 @@ export function ClaimAnalysisPage() {
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
   const [chatError, setChatError] = useState<string>()
+  const [chatDebug, setChatDebug] = useState<ChatDebugState | null>(null)
+  const [chatDebugOpen, setChatDebugOpen] = useState(false)
   const documentInputRef = useRef<HTMLInputElement | null>(null)
   const chatAbortRef = useRef<AbortController | null>(null)
   const panStartRef = useRef<{ pointerId: number; x: number; y: number; offsetX: number; offsetY: number } | null>(null)
@@ -680,6 +704,8 @@ export function ClaimAnalysisPage() {
     setChatMessages([])
     setChatInput('')
     setChatError(undefined)
+    setChatDebug(null)
+    setChatDebugOpen(false)
   }, [activeReceiptId])
 
   async function sendChat() {
@@ -698,14 +724,20 @@ export function ClaimAnalysisPage() {
     setChatMessages(nextMessages)
     setChatInput('')
     setChatError(undefined)
+    setChatDebug({ question: message, response: '' })
     setChatLoading(true)
 
     try {
+      fetchClaimChatDebug(activeReceiptId, message, history)
+        .then((debug) => setChatDebug((current) => ({ ...(current || {}), request: debug, question: message })))
+        .catch((err) => setChatDebug((current) => ({ ...(current || {}), response: `Debug context failed: ${String(err)}`, question: message })))
+
       await streamClaimChatMessage(
         activeReceiptId,
         message,
         history,
         (chunk) => {
+          setChatDebug((current) => ({ ...(current || {}), question: message, response: `${current?.response || ''}${chunk}` }))
           setChatMessages((current) => {
             const updated = [...current]
             const assistantMessage = updated[assistantIndex]
@@ -1161,6 +1193,19 @@ export function ClaimAnalysisPage() {
               <CollapsiblePanel className="panel entry-chat-panel app-grow" title="Entry Chat" allowFocusView>
                 <article className="entry-chat-layout">
                   <section className="entry-chat-console">
+                    <div className="entry-chat-toolbar">
+                      <span>Case-aware assistant</span>
+                      <button
+                        type="button"
+                        className="chat-debug-btn"
+                        onClick={() => setChatDebugOpen(true)}
+                        disabled={!chatDebug}
+                        title="Show prompt, context, and last response"
+                        aria-label="Show chat debug payload"
+                      >
+                        Debug
+                      </button>
+                    </div>
                     <div className="entry-chat-messages" aria-live="polite">
                       {!chatMessages.length && (
                         <div className="chat-empty-state">
@@ -1172,7 +1217,7 @@ export function ClaimAnalysisPage() {
                       {chatMessages.map((message, index) => (
                         <div key={`${message.role}-${index}`} className={`chat-message ${message.role}`}>
                           <span>{message.role === 'user' ? 'Reviewer' : 'Assistant'}</span>
-                          <p>{message.content || (chatLoading && message.role === 'assistant' ? 'Thinking...' : '')}</p>
+                          <p>{renderMarkdownLite(message.content || (chatLoading && message.role === 'assistant' ? 'Thinking...' : ''))}</p>
                         </div>
                       ))}
                     </div>
@@ -1442,6 +1487,54 @@ export function ClaimAnalysisPage() {
               onPointerMove={handleViewerPointerMove}
               onPointerUp={handleViewerPointerUp}
             />
+          </section>
+        </div>
+      )}
+
+      {chatDebugOpen && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setChatDebugOpen(false)}>
+          <section className="modal-panel chat-debug-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <h3>Chat Debug Payload</h3>
+                <p className="muted-text">Shows what was sent to the LLM and the last streamed response.</p>
+              </div>
+              <button type="button" className="small-btn" onClick={() => setChatDebugOpen(false)}>Close</button>
+            </div>
+            <div className="modal-body chat-debug-body">
+              {!chatDebug ? (
+                <p className="muted-text">Ask a question first, then open debug to inspect the request.</p>
+              ) : (
+                <>
+                  <section>
+                    <h4>User Question</h4>
+                    <pre>{chatDebug.question || '—'}</pre>
+                  </section>
+                  <section>
+                    <h4>LLM Settings</h4>
+                    <pre>{JSON.stringify({
+                      model: chatDebug.request?.model,
+                      base_url: chatDebug.request?.base_url,
+                      settings_ready: chatDebug.request?.settings_ready,
+                      context_sources: chatDebug.request?.context_sources,
+                      extraction_status: chatDebug.request?.extraction_status
+                    }, null, 2)}</pre>
+                  </section>
+                  <section>
+                    <h4>Messages Sent to LLM</h4>
+                    <pre>{JSON.stringify(chatDebug.request?.messages || [], null, 2)}</pre>
+                  </section>
+                  <section>
+                    <h4>Structured Case Context</h4>
+                    <pre>{JSON.stringify(chatDebug.request?.case_context || {}, null, 2)}</pre>
+                  </section>
+                  <section>
+                    <h4>Last Assistant Response</h4>
+                    <pre>{chatDebug.response || 'No streamed response captured yet.'}</pre>
+                  </section>
+                </>
+              )}
+            </div>
           </section>
         </div>
       )}

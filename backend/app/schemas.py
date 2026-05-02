@@ -269,6 +269,16 @@ class ClaimChatResponse(BaseModel):
     extraction_status: Dict[str, Any] = Field(default_factory=dict)
 
 
+class ClaimChatDebugResponse(BaseModel):
+    model: str
+    base_url: Optional[str] = None
+    settings_ready: bool
+    context_sources: List[str]
+    extraction_status: Dict[str, Any] = Field(default_factory=dict)
+    messages: List[Dict[str, Any]]
+    case_context: Dict[str, Any]
+
+
 class PolicyRuleIn(BaseModel):
     key: str
     name: str

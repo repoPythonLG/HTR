@@ -5,7 +5,22 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, List, Tuple
 
 from app.core.config import settings
+from app.core.database import SessionLocal
 from app.models import Claim, ReceiptDocument
+
+MAX_DOCUMENT_TEXT_CONTEXT_CHARS = 30000
+
+
+def _stored_text_is_placeholder(document: ReceiptDocument) -> bool:
+    text = " ".join((document.extracted_text or "").split())
+    if not text:
+        return True
+    if text.casefold() == document.file_name.casefold():
+        return True
+    if text.startswith("Extraction failed for "):
+        return True
+    useful_tokens = ["invoice", "receipt", "folio", "total", "tax", "check-in", "check-out", "hotel", "amount", "sar"]
+    return len(text) < 40 or sum(1 for token in useful_tokens if token in text.casefold()) < 2
 
 
 def _display_label(value: str | None) -> str:
@@ -15,7 +30,7 @@ def _display_label(value: str | None) -> str:
 
 
 def _document_text_with_optional_ocr(document: ReceiptDocument) -> Tuple[str, Dict[str, Any]]:
-    if document.extracted_text:
+    if document.extracted_text and not _stored_text_is_placeholder(document):
         return document.extracted_text, {"source": "stored_extracted_text", "status": "available"}
 
     path = Path(document.file_path)
@@ -53,14 +68,170 @@ def _compact_json(value: Any) -> str:
     return json.dumps(value, default=str, ensure_ascii=False, indent=2)
 
 
+def _money(value: Any, currency: str = "SAR") -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "not recorded"
+    return f"{number:,.2f} {currency}"
+
+
+def _percent(value: Any) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "not recorded"
+    return f"{number:,.2f}%"
+
+
+def _finding_reviewer_comparison(detection_type: str, facts: Dict[str, Any], claim: Claim) -> Dict[str, Any]:
+    label = _display_label(detection_type)
+    comparison: Dict[str, Any] = {
+        "finding": label,
+        "plain_english": "",
+        "comparison_points": [],
+        "reviewer_focus": [],
+    }
+
+    if detection_type in {"trip_overlap_rule", "overlapping_trips"}:
+        related_ids = facts.get("related_claims") or facts.get("overlapping_claims") or facts.get("overlapping_claim_ids") or []
+        related = _related_claim_summaries(related_ids if isinstance(related_ids, list) else [])
+        comparison["plain_english"] = "Trip dates overlap with another travel expense entry for the same employee."
+        comparison["comparison_points"].append(
+            f"Current entry travel window: {claim.start_date} to {claim.end_date} ({claim.trip_duration_days} days)."
+        )
+        for item in related:
+            comparison["comparison_points"].append(
+                "Related entry {trip_number}: {start_date} to {end_date}, {destination}, {amount}, employee {employee_id}.".format(
+                    trip_number=item.get("trip_number") or item.get("entry_id"),
+                    start_date=item.get("start_date"),
+                    end_date=item.get("end_date"),
+                    destination=item.get("destination"),
+                    amount=_money(item.get("amount"), claim.currency),
+                    employee_id=item.get("employee_id"),
+                )
+            )
+        if not related and related_ids:
+            comparison["comparison_points"].append(f"Related overlapping entry ids: {', '.join(str(item) for item in related_ids)}.")
+        comparison["related_entries"] = related
+        comparison["reviewer_focus"] = [
+            "Check whether the employee could reasonably be in both destinations during the overlap.",
+            "Compare receipts, hotel dates, travel approvals, and booking records for both entries.",
+        ]
+    elif detection_type in {"weekend_buffer_days", "extended_stay"}:
+        allowed = facts.get("allowed_days") or facts.get("expected_duration_days") or facts.get("policy_allowed_days")
+        actual = facts.get("stay_days") or facts.get("trip_duration_days") or claim.trip_duration_days
+        comparison["plain_english"] = "Trip duration exceeds the expected business-travel window plus policy buffer."
+        comparison["comparison_points"] = [
+            f"This entry duration: {actual} days.",
+            f"Allowed/reference duration: {allowed if allowed is not None else 'not recorded'} days.",
+        ]
+        comparison["reviewer_focus"] = ["Ask for agenda, training schedule, approval, or justification for the extra stay."]
+    elif detection_type == "amount_above_peer_mean_threshold":
+        amount = facts.get("claim_amount") or claim.claim_total
+        mean = facts.get("peer_mean")
+        threshold_amount = facts.get("threshold_amount")
+        uplift = facts.get("uplift_vs_mean_pct")
+        threshold_pct = facts.get("configured_threshold_pct")
+        comparison["plain_english"] = "Amount is above the configured peer-mean threshold."
+        comparison["comparison_points"] = [
+            f"This entry amount: {_money(amount, claim.currency)}.",
+            f"Peer mean: {_money(mean, claim.currency)}.",
+            f"Configured limit: {_money(threshold_amount, claim.currency)} ({_percent(threshold_pct)} above peer mean).",
+            f"Variance versus peer mean: {_percent(uplift)}.",
+        ]
+        comparison["reviewer_focus"] = ["Verify itemised invoice lines and business justification for the variance."]
+    elif detection_type in {"location_adjusted_threshold_pct", "location_cost_anomaly"}:
+        amount = facts.get("claim_amount") or claim.claim_total
+        adjusted_amount = facts.get("location_adjusted_claim_amount") or facts.get("location_adjusted_amount")
+        adjusted_mean = facts.get("peer_mean_location_adjusted_amount") or facts.get("adjusted_peer_mean")
+        adjusted_limit = facts.get("location_adjusted_threshold_amount") or facts.get("adjusted_limit")
+        factor = facts.get("location_cost_factor")
+        uplift = facts.get("uplift_vs_location_adjusted_mean_pct")
+        comparison["plain_english"] = "Amount remains high after adjusting for destination country/city cost level."
+        comparison["comparison_points"] = [
+            f"This entry amount: {_money(amount, claim.currency)}.",
+            f"Location-adjusted amount: {_money(adjusted_amount, claim.currency)}.",
+            f"Adjusted peer mean: {_money(adjusted_mean, claim.currency)}.",
+            f"Adjusted limit: {_money(adjusted_limit, claim.currency)}.",
+            f"Variance versus location-adjusted peer mean: {_percent(uplift)}.",
+            f"Destination cost factor: {factor if factor is not None else 'not recorded'}.",
+        ]
+        comparison["reviewer_focus"] = ["Check whether destination pricing explains the amount; if not, request itemised support."]
+    elif detection_type in {"outlier_min_sample_size", "amount_outlier_abnormality"}:
+        amount = facts.get("claim_amount") or claim.claim_total
+        mean = facts.get("peer_mean")
+        median = facts.get("peer_median")
+        upper = facts.get("iqr_upper_bound")
+        z_score = facts.get("z_score")
+        robust = facts.get("robust_z_score")
+        comparison["plain_english"] = "Amount is statistically outside the normal peer distribution."
+        comparison["comparison_points"] = [
+            f"This entry amount: {_money(amount, claim.currency)}.",
+            f"Peer median: {_money(median, claim.currency)}.",
+            f"Peer mean: {_money(mean, claim.currency)}.",
+            f"Outlier upper bound: {_money(upper, claim.currency)}.",
+            f"Z-score: {z_score if z_score is not None else 'not recorded'}; robust z-score: {robust if robust is not None else 'not recorded'}.",
+        ]
+        comparison["reviewer_focus"] = ["Compare against similar activity, boundary, country/city, and expense type."]
+    elif detection_type in {"vendor_concentration_rule", "vendor_concentration"}:
+        vendor = facts.get("vendor")
+        share = facts.get("vendor_share")
+        sample_size = facts.get("sample_size")
+        comparison["plain_english"] = "A single vendor represents an unusually large share of this employee's travel expense history."
+        comparison["comparison_points"] = [
+            f"Vendor: {vendor or 'not recorded'}.",
+            f"Vendor share: {_percent(float(share) * 100) if isinstance(share, (int, float)) and share <= 1 else _percent(share)}.",
+            f"Sample size: {sample_size if sample_size is not None else 'not recorded'} entries.",
+        ]
+        comparison["reviewer_focus"] = ["Check whether vendor usage is expected for this role/travel pattern or indicates repeat unsupported spend."]
+    else:
+        comparison["plain_english"] = "This finding contributes to the overall risk score."
+        comparison["comparison_points"] = [f"Supporting facts are available under the {label} finding."]
+        comparison["reviewer_focus"] = ["Review source evidence and compare against policy before disposition."]
+
+    return comparison
+
+
+def _related_claim_summaries(claim_ids: List[Any]) -> List[Dict[str, Any]]:
+    ids = [str(item) for item in claim_ids if item]
+    if not ids:
+        return []
+    try:
+        with SessionLocal() as db:
+            related_claims = db.query(Claim).filter(Claim.claim_id.in_(ids)).all()
+            return [
+                {
+                    "entry_id": item.claim_id,
+                    "trip_number": item.trip_number,
+                    "employee_id": item.employee_id,
+                    "employee_name": item.employee_name,
+                    "destination": ", ".join(part for part in [item.to_city or item.destination_city, item.to_country] if part),
+                    "start_date": item.start_date,
+                    "end_date": item.end_date,
+                    "duration_days": item.trip_duration_days,
+                    "amount": item.claim_total,
+                    "status": item.status,
+                }
+                for item in related_claims
+            ]
+    except Exception:
+        return []
+
+
 def build_claim_chat_context(claim: Claim) -> Tuple[str, List[str], Dict[str, Any]]:
     document_sections: List[Dict[str, Any]] = []
     extraction_status: Dict[str, Any] = {}
 
     for document in claim.documents:
         text, status = _document_text_with_optional_ocr(document)
+        full_text = text or ""
+        context_text = full_text[:MAX_DOCUMENT_TEXT_CONTEXT_CHARS]
         extraction_status[document.document_id] = {
             "file_name": document.file_name,
+            "full_text_chars": len(full_text),
+            "context_text_chars": len(context_text),
+            "complete_text_in_context": len(full_text) == len(context_text),
             **status,
         }
         document_sections.append(
@@ -68,7 +239,9 @@ def build_claim_chat_context(claim: Claim) -> Tuple[str, List[str], Dict[str, An
                 "file_name": document.file_name,
                 "mime_type": document.mime_type,
                 "document_type": document.document_type,
-                "extracted_text": text[:6000] if text else "",
+                "extracted_text": context_text,
+                "extracted_text_chars": len(full_text),
+                "complete_text_in_context": len(full_text) == len(context_text),
                 "extracted_fields": [
                     {
                         "name": field.name,
@@ -81,7 +254,31 @@ def build_claim_chat_context(claim: Claim) -> Tuple[str, List[str], Dict[str, An
             }
         )
 
+    reviewer_findings = [
+        _finding_reviewer_comparison(detection.detection_type, detection.supporting_facts or {}, claim)
+        for detection in claim.detections
+    ]
+
     context = {
+        "reviewer_brief": {
+            "important_instruction": (
+                "When answering questions such as 'what is wrong with this entry', use the reviewer_findings_comparison "
+                "section first. Give actual-vs-limit comparisons, overlap dates/records where available, and practical "
+                "verification steps. Use markdown with bold finding headings."
+            ),
+            "entry_headline": {
+                "entry_id": claim.claim_id,
+                "trip_number": claim.trip_number,
+                "employee_id": claim.employee_id,
+                "destination": [claim.to_city or claim.destination_city, claim.to_country, claim.to_region],
+                "amount": claim.claim_total,
+                "currency": claim.currency,
+                "risk_score": claim.risk_assessment.risk_score if claim.risk_assessment else claim.risk_score_cached,
+                "risk_level": claim.risk_assessment.risk_level if claim.risk_assessment else None,
+                "primary_red_flag": claim.risk_assessment.primary_red_flag if claim.risk_assessment else None,
+            },
+            "reviewer_findings_comparison": reviewer_findings,
+        },
         "travel_expense_entry": {
             "entry_id": claim.claim_id,
             "employee": {"id": claim.employee_id, "name": claim.employee_name, "department": claim.department},
@@ -172,8 +369,9 @@ def build_claim_chat_context(claim: Claim) -> Tuple[str, List[str], Dict[str, An
 
 def _fallback_not_configured() -> str:
     return (
-        "Chat context is ready, but the vLLM endpoint is not configured. Set "
-        "CHAT_VLLM_BASE_URL, CHAT_VLLM_MODEL, and CHAT_VLLM_API_KEY to enable live LLM answers."
+        "Chat context is ready, but the Qwen/OpenAI-compatible chat settings are not complete. "
+        "Set QWEN_API_KEY or DASHSCOPE_API_KEY to enable live LLM answers. "
+        "The endpoint and model can be changed with QWEN_BASE_URL and QWEN_MODEL."
     )
 
 
@@ -188,7 +386,15 @@ def _build_chat_messages(claim: Claim, message: str, history: List[Dict[str, str
         "You are an enterprise travel expense investigation assistant for SABIC reviewers. "
         "Answer using only the provided case context. Be concise, factual, and business-friendly. "
         "If the evidence is missing or uncertain, say so clearly and suggest what the reviewer should verify. "
-        "Never invent receipts, dates, amounts, policy rules, or decisions.\n\n"
+        "Never invent receipts, dates, amounts, policy rules, or decisions. "
+        "Use 'travel expense entry' or 'entry', not 'claim'. If raw context field names contain 'claim', translate them "
+        "for the user as 'entry' or 'travel expense entry'. "
+        "For 'what is wrong' questions, structure the response as markdown: start with a one-sentence summary, then "
+        "list each issue with a bold heading in the exact form **Finding Name (Severity)**. "
+        "For every issue, include the comparison evidence from reviewer_findings_comparison: actual value versus policy limit, "
+        "peer mean, threshold, location-adjusted limit, or overlapping entry details. "
+        "Do not focus on malformed OCR/extraction fields unless the user asks about receipt extraction quality. "
+        "Do not give generic actions without the supporting numbers or dates.\n\n"
         f"CASE CONTEXT:\n{context}"
     )
 
@@ -205,23 +411,48 @@ def _build_chat_messages(claim: Claim, message: str, history: List[Dict[str, str
     return messages, sources, extraction_status
 
 
+def build_claim_chat_debug(claim: Claim, message: str, history: List[Dict[str, str]]) -> Dict[str, Any]:
+    messages, sources, extraction_status = _build_chat_messages(claim, message, history)
+    serialized_messages = [
+        {
+            "role": message_item.__class__.__name__.replace("Message", "").lower(),
+            "content": getattr(message_item, "content", ""),
+        }
+        for message_item in messages
+    ]
+    context, _, _ = build_claim_chat_context(claim)
+    return {
+        "model": settings.chat_vllm_model if _chat_settings_ready() else "not-configured",
+        "base_url": settings.chat_vllm_base_url,
+        "settings_ready": _chat_settings_ready(),
+        "context_sources": sources,
+        "extraction_status": extraction_status,
+        "messages": serialized_messages,
+        "case_context": json.loads(context),
+    }
+
+
 def _chat_llm():
     from langchain_openai import ChatOpenAI
 
     return ChatOpenAI(
         model=settings.chat_vllm_model,
         base_url=settings.chat_vllm_base_url,
-        api_key=settings.chat_vllm_api_key or "EMPTY",
+        api_key=settings.chat_vllm_api_key,
         temperature=settings.chat_vllm_temperature,
         timeout=settings.chat_vllm_timeout_seconds,
         streaming=True,
     )
 
 
+def _chat_settings_ready() -> bool:
+    return bool(settings.chat_vllm_base_url and settings.chat_vllm_model and settings.chat_vllm_api_key)
+
+
 def answer_claim_chat(claim: Claim, message: str, history: List[Dict[str, str]]) -> Dict[str, Any]:
     _, sources, extraction_status = build_claim_chat_context(claim)
 
-    if not settings.chat_vllm_base_url:
+    if not _chat_settings_ready():
         return {
             "answer": _fallback_not_configured(),
             "model": "not-configured",
@@ -250,7 +481,7 @@ def answer_claim_chat(claim: Claim, message: str, history: List[Dict[str, str]])
 
 
 def stream_claim_chat(claim: Claim, message: str, history: List[Dict[str, str]]) -> Iterator[str]:
-    if not settings.chat_vllm_base_url:
+    if not _chat_settings_ready():
         yield _fallback_not_configured()
         return
 
