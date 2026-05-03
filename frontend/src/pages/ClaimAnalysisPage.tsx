@@ -916,6 +916,18 @@ export function ClaimAnalysisPage() {
     void sendChat(question)
   }
 
+  function startNewChat() {
+    chatAbortRef.current?.abort()
+    chatAbortRef.current = null
+    setChatMessages([])
+    setChatInput('')
+    setChatError(undefined)
+    setChatDebug(null)
+    setChatDebugOpen(false)
+    setChatLoading(false)
+    chatShouldStickToBottomRef.current = true
+  }
+
   function handleChatKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
     if (event.key !== 'Enter' || event.shiftKey) return
     event.preventDefault()
@@ -1342,16 +1354,26 @@ export function ClaimAnalysisPage() {
                   <section className="entry-chat-console">
                     <div className="entry-chat-toolbar">
                       <span>Case-aware assistant</span>
-                      <button
-                        type="button"
-                        className="chat-debug-btn"
-                        onClick={() => setChatDebugOpen(true)}
-                        disabled={!chatDebug}
-                        title="Show prompt, context, and last response"
-                        aria-label="Show chat debug payload"
-                      >
-                        Debug
-                      </button>
+                      <div className="entry-chat-toolbar-actions">
+                        <button
+                          type="button"
+                          className="chat-debug-btn"
+                          onClick={startNewChat}
+                          disabled={!chatMessages.length && !chatInput.trim() && !chatDebug && !chatError}
+                        >
+                          New chat
+                        </button>
+                        <button
+                          type="button"
+                          className="chat-debug-btn"
+                          onClick={() => setChatDebugOpen(true)}
+                          disabled={!chatDebug}
+                          title="Show prompt, context, and last response"
+                          aria-label="Show chat debug payload"
+                        >
+                          Debug
+                        </button>
+                      </div>
                     </div>
                     <div className="entry-chat-messages" ref={chatMessagesRef} onScroll={handleChatScroll} aria-live="polite">
                       {!chatMessages.length && (

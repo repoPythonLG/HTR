@@ -97,6 +97,12 @@ def get_active_import_metadata() -> Optional[Dict[str, Any]]:
         return None
 
 
+def clear_active_import_metadata() -> None:
+    path = _active_import_metadata_path()
+    if path.exists():
+        path.unlink()
+
+
 def delete_claim_storage(claim_id: str) -> None:
     ensure_storage_root()
     claim_dir = settings.storage_root / claim_id

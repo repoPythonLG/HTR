@@ -925,6 +925,14 @@ button:disabled {
   margin-bottom: 0;
 }
 
+.intake-action-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: flex-end;
+}
+
 .intake-upload-panel .form-grid {
   align-content: start;
   gap: 0.72rem;
@@ -1383,6 +1391,127 @@ button:disabled {
 .advanced-sections-page,
 .employee-risk-page {
   height: 100%;
+  min-height: 0;
+}
+
+.employee-page {
+  overflow: hidden;
+}
+
+.employee-hero-panel {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.employee-submit-panel,
+.employee-submissions-panel {
+  min-height: 0;
+}
+
+.employee-submit-form {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+  padding-right: 0.2rem;
+}
+
+.employee-submit-intro {
+  border: 1px solid rgba(190, 209, 234, 0.9);
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(242, 247, 255, 0.94)),
+    radial-gradient(circle at top right, rgba(247, 162, 35, 0.13), transparent 28rem);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.employee-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.82rem;
+}
+
+.employee-form-grid label {
+  color: var(--text-soft);
+  display: grid;
+  gap: 0.34rem;
+  font-size: 0.74rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.employee-file-drop {
+  border: 1px dashed rgba(0, 71, 175, 0.46);
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(238, 245, 255, 0.92), rgba(255, 250, 243, 0.9)),
+    #ffffff;
+  color: var(--text-soft);
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.9rem;
+  padding: 1rem;
+}
+
+.employee-file-drop strong {
+  color: var(--text);
+  display: block;
+}
+
+.employee-file-drop small {
+  display: block;
+  margin-top: 0.18rem;
+}
+
+.employee-file-drop input {
+  grid-column: 1 / -1;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.employee-file-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.employee-file-list span {
+  border: 1px solid rgba(190, 209, 234, 0.95);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  font-weight: 750;
+  padding: 0.38rem 0.62rem;
+}
+
+.employee-file-list button {
+  border: 0;
+  border-radius: 999px;
+  background: rgba(190, 38, 52, 0.1);
+  color: #b42332;
+  box-shadow: none;
+  font-size: 0.68rem;
+  font-weight: 900;
+  min-height: 0;
+  padding: 0.2rem 0.42rem;
+  text-transform: uppercase;
+}
+
+.employee-submissions-table-wrap {
   min-height: 0;
 }
 
@@ -2765,6 +2894,12 @@ button:disabled {
   letter-spacing: 0.08em;
   padding: 0.78rem 1.1rem;
   text-transform: uppercase;
+}
+
+.entry-chat-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .chat-debug-btn {

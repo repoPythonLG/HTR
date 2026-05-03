@@ -92,7 +92,6 @@ export function ClaimsWorkbenchPage() {
       setError(String(err))
     } finally {
       setAnalyzingId(undefined)
-      await loadReceipts()
     }
   }
 

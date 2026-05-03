@@ -14,6 +14,12 @@ import { ModelGovernancePage } from './pages/ModelGovernancePage'
 import { OutlierAnalyticsPage } from './pages/OutlierAnalyticsPage'
 import { ProcessedClaimsHistoryPage } from './pages/ProcessedClaimsHistoryPage'
 import { SpreadsheetViewerPage } from './pages/SpreadsheetViewerPage'
+import { useAuth } from './context/AuthContext'
+
+function HomeRedirect() {
+  const { user } = useAuth()
+  return <Navigate to={user?.role === 'employee' ? '/employee' : '/receipts'} replace />
+}
 
 export default function App() {
   return (
@@ -22,14 +28,16 @@ export default function App() {
 
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
-          <Route index element={<Navigate to="/receipts" replace />} />
-          <Route path="dashboard" element={<ExecutiveDashboardPage />} />
-          <Route path="claims" element={<Navigate to="/receipts" replace />} />
-          <Route path="receipts" element={<ClaimsWorkbenchPage />} />
-          <Route path="intake" element={<DataIntakePage />} />
-          <Route path="intake/spreadsheet" element={<SpreadsheetViewerPage />} />
-          <Route path="claims/:claimId/analysis" element={<ClaimAnalysisPage />} />
-          <Route path="receipts/:receiptId/analysis" element={<ClaimAnalysisPage />} />
+          <Route index element={<HomeRedirect />} />
+          <Route element={<ProtectedRoute allowedRoles={['reviewer', 'administrator']} />}>
+            <Route path="dashboard" element={<ExecutiveDashboardPage />} />
+            <Route path="claims" element={<Navigate to="/receipts" replace />} />
+            <Route path="receipts" element={<ClaimsWorkbenchPage />} />
+            <Route path="intake" element={<DataIntakePage />} />
+            <Route path="intake/spreadsheet" element={<SpreadsheetViewerPage />} />
+            <Route path="claims/:claimId/analysis" element={<ClaimAnalysisPage />} />
+            <Route path="receipts/:receiptId/analysis" element={<ClaimAnalysisPage />} />
+          </Route>
           <Route element={<ProtectedRoute allowedRoles={['reviewer', 'administrator']} />}>
             <Route path="advanced" element={<AdvancedSectionsPage />} />
             <Route path="employee-insights" element={<EmployeeRiskInsightsPage />} />
@@ -48,7 +56,7 @@ export default function App() {
         </Route>
       </Route>
 
-      <Route path="*" element={<Navigate to="/receipts" replace />} />
+      <Route path="*" element={<HomeRedirect />} />
     </Routes>
   )
 }

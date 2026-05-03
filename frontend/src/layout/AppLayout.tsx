@@ -24,6 +24,7 @@ function NavItem({ to, label, icon, activePaths = [] }: { to: string; label: str
 export function AppLayout() {
   const { user, logoutUser } = useAuth()
   const canSeeAdvanced = user?.role === 'reviewer' || user?.role === 'administrator'
+  const canSeeReviewWorkspace = user?.role === 'reviewer' || user?.role === 'administrator'
 
   return (
     <div className="shell">
@@ -47,11 +48,15 @@ export function AppLayout() {
         <div className="nav-section-label">Application Pages</div>
 
         <nav className="nav-grid">
-          <NavItem to="/receipts" label="Travel Expense Entry Workbench" icon={<ReceiptsIcon />} />
-          <NavItem to="/dashboard" label="Executive Dashboard" icon={<DashboardIcon />} />
-          <NavItem to="/intake" label="Data Intake" icon={<UploadIcon />} />
           {user?.role === 'employee' && (
             <NavItem to="/employee" label="Employee View" icon={<EmployeeIcon />} />
+          )}
+          {canSeeReviewWorkspace && (
+            <>
+              <NavItem to="/receipts" label="Travel Expense Entry Workbench" icon={<ReceiptsIcon />} />
+              <NavItem to="/dashboard" label="Executive Dashboard" icon={<DashboardIcon />} />
+              <NavItem to="/intake" label="Data Intake" icon={<UploadIcon />} />
+            </>
           )}
           {canSeeAdvanced && (
             <NavItem

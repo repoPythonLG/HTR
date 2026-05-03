@@ -1,6 +1,7 @@
 import dayjs from 'dayjs'
 import { FormEvent, useEffect, useState } from 'react'
 import {
+  clearTravelExpenseDatabase,
   downloadSampleSpreadsheet,
   fetchActiveImport,
   fetchActiveImportPreview,
@@ -19,6 +20,7 @@ export function DataIntakePage() {
   const [preview, setPreview] = useState<SpreadsheetPreview>()
 
   const [loading, setLoading] = useState(false)
+  const [clearingData, setClearingData] = useState(false)
   const [downloadingSample, setDownloadingSample] = useState(false)
   const [importProgress, setImportProgress] = useState<{ active: boolean; percent: number; label: string }>({
     active: false,
@@ -97,6 +99,26 @@ export function DataIntakePage() {
     }
   }
 
+  async function handleClearDatabase() {
+    const confirmed = window.confirm('Clear all travel expense entries, detections, decisions, documents, and imported spreadsheet metadata? This cannot be undone.')
+    if (!confirmed) return
+
+    setClearingData(true)
+    setError(undefined)
+    setMessage(undefined)
+    try {
+      const result = await clearTravelExpenseDatabase()
+      setExcelFile(null)
+      setActiveImport(undefined)
+      setPreview(undefined)
+      setMessage(`Cleared ${result.deleted_claims} travel expense entries. The table is ready for a fresh upload.`)
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setClearingData(false)
+    }
+  }
+
   function openSpreadsheetNewTab() {
     window.open('/intake/spreadsheet', '_blank', 'noopener,noreferrer')
   }
@@ -120,6 +142,9 @@ export function DataIntakePage() {
                     <button onClick={handleDownloadSample} disabled={downloadingSample}>
                       <span className="btn-inline"><DocumentIcon size={14} />{downloadingSample ? 'Preparing...' : 'Download 1000-Row Example'}</span>
                     </button>
+                    <button type="button" className="small-btn danger-btn" onClick={handleClearDatabase} disabled={clearingData || loading}>
+                      {clearingData ? 'Clearing...' : 'Clear Table'}
+                    </button>
                   </div>
 
                   {loading && <div className="loading-bar" />}
@@ -140,11 +165,11 @@ export function DataIntakePage() {
                         <strong>{dayjs(activeImport.uploaded_at).format('DD MMM YYYY HH:mm')}</strong>
                       </article>
                       <article className="metric-card">
-                        <div className="metric-line"><span>Rows Imported</span><AnalyzeIcon className="metric-icon" /></div>
+                        <div className="metric-line"><span>Rows Stored</span><AnalyzeIcon className="metric-icon" /></div>
                         <strong>{activeImport.row_count}</strong>
                       </article>
                       <article className="metric-card">
-                        <div className="metric-line"><span>Rows Analyzed</span><AnalyzeIcon className="metric-icon" /></div>
+                        <div className="metric-line"><span>Stored Rows Analyzed</span><AnalyzeIcon className="metric-icon" /></div>
                         <strong>{activeImport.analyzed_count}</strong>
                       </article>
                     </div>
@@ -163,11 +188,16 @@ export function DataIntakePage() {
                   <div className="section-title-row">
                     <div>
                       <h3 className="section-title"><UploadIcon size={16} />Bulk Upload (Excel/CSV)</h3>
-                      <p className="muted-text">Use SABIC travel-register spreadsheets. New upload replaces the prior imported dataset.</p>
+                      <p className="muted-text">Use SABIC travel-register spreadsheets. New uploads append to the existing travel expense table.</p>
                     </div>
-                    <button type="button" className="small-btn ghost-btn" onClick={handleDownloadSample} disabled={downloadingSample}>
-                      {downloadingSample ? 'Preparing...' : 'Download Example'}
-                    </button>
+                    <div className="intake-action-row">
+                      <button type="button" className="small-btn ghost-btn" onClick={handleDownloadSample} disabled={downloadingSample}>
+                        {downloadingSample ? 'Preparing...' : 'Download Example'}
+                      </button>
+                      <button type="button" className="small-btn danger-btn" onClick={handleClearDatabase} disabled={clearingData || loading}>
+                        {clearingData ? 'Clearing...' : 'Clear Table'}
+                      </button>
+                    </div>
                   </div>
 
                   <form className="form-grid" onSubmit={handleExcelImport}>
@@ -190,7 +220,7 @@ export function DataIntakePage() {
                       <input type="checkbox" checked={autoAnalyze} onChange={(e) => setAutoAnalyze(e.target.checked)} />
                       Analyze rows immediately after import
                     </label>
-                    <button type="submit" disabled={!excelFile || loading}><span className="btn-inline"><UploadIcon size={14} />Import Spreadsheet</span></button>
+                    <button type="submit" disabled={!excelFile || loading || clearingData}><span className="btn-inline"><UploadIcon size={14} />Append Spreadsheet</span></button>
                     {importProgress.active && (
                       <div className="import-progress-card" aria-live="polite">
                         <div className="import-progress-head">
@@ -218,7 +248,7 @@ export function DataIntakePage() {
                 <div className="panel-head">
                   <div>
                     <h3 className="section-title"><AnalyzeIcon size={16} />Last Imported Spreadsheet</h3>
-                    <p>The application risk dataset is based on this latest uploaded file.</p>
+                    <p>Preview shows the latest uploaded spreadsheet. Stored row counts include appended imports.</p>
                   </div>
                   <button onClick={openSpreadsheetNewTab} disabled={!activeImport}>
                     <span className="btn-inline"><DocumentIcon size={14} />Open Full Spreadsheet (New Tab)</span>
@@ -239,11 +269,11 @@ export function DataIntakePage() {
                         <strong>{dayjs(activeImport.uploaded_at).format('DD MMM YYYY HH:mm')}</strong>
                       </article>
                       <article className="metric-card">
-                        <div className="metric-line"><span>Rows Imported</span><AnalyzeIcon className="metric-icon" /></div>
+                        <div className="metric-line"><span>Rows Stored</span><AnalyzeIcon className="metric-icon" /></div>
                         <strong>{activeImport.row_count}</strong>
                       </article>
                       <article className="metric-card">
-                        <div className="metric-line"><span>Rows Analyzed</span><AnalyzeIcon className="metric-icon" /></div>
+                        <div className="metric-line"><span>Stored Rows Analyzed</span><AnalyzeIcon className="metric-icon" /></div>
                         <strong>{activeImport.analyzed_count}</strong>
                       </article>
                     </div>

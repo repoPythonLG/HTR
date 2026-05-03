@@ -283,6 +283,13 @@ export async function uploadClaimPack(form: {
   department: string
   start_date?: string
   end_date?: string
+  trip_settlement_date?: string
+  trip_number?: string
+  trip_activity?: string
+  trip_boundary?: string
+  to_country?: string
+  expense_type?: string
+  trip_duration_days?: string
   destination_city?: string
   claim_total?: string
   receipt_total?: string
@@ -297,6 +304,13 @@ export async function uploadClaimPack(form: {
   multipart.append('currency', form.currency)
   if (form.start_date) multipart.append('start_date', form.start_date)
   if (form.end_date) multipart.append('end_date', form.end_date)
+  if (form.trip_settlement_date) multipart.append('trip_settlement_date', form.trip_settlement_date)
+  if (form.trip_number) multipart.append('trip_number', form.trip_number)
+  if (form.trip_activity) multipart.append('trip_activity', form.trip_activity)
+  if (form.trip_boundary) multipart.append('trip_boundary', form.trip_boundary)
+  if (form.to_country) multipart.append('to_country', form.to_country)
+  if (form.expense_type) multipart.append('expense_type', form.expense_type)
+  if (form.trip_duration_days) multipart.append('trip_duration_days', form.trip_duration_days)
   if (form.destination_city) multipart.append('destination_city', form.destination_city)
   for (const file of form.files) {
     multipart.append('files', file)
@@ -352,6 +366,11 @@ export async function fetchActiveImport(): Promise<ActiveImport> {
 
 export async function fetchActiveImportPreview(): Promise<SpreadsheetPreview> {
   const response = await api.get<SpreadsheetPreview>('/imports/active/preview')
+  return response.data
+}
+
+export async function clearTravelExpenseDatabase(): Promise<{ deleted_claims: number; status: string }> {
+  const response = await api.delete<{ deleted_claims: number; status: string }>('/claims/clear-all')
   return response.data
 }
 

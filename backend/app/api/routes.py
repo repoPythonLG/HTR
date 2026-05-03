@@ -62,6 +62,7 @@ from app.services.policy import (
     risk_detection_mode_to_code,
 )
 from app.services.storage import (
+    clear_active_import_metadata,
     delete_claim_storage,
     get_active_import_metadata,
     save_import_source,
@@ -79,7 +80,9 @@ ACTIVE_CLAIM_STATUSES = {"uploaded", "analyzed", "under_review"}
 def _enforce_employee_claim_scope(current_user: User, claim: Claim) -> None:
     if current_user.role != "employee":
         return
-    if not current_user.employee_code or claim.employee_id != current_user.employee_code:
+    owns_submitted_record = claim.submitted_by_user_id == current_user.user_id
+    matches_demo_employee_code = bool(current_user.employee_code and claim.employee_id == current_user.employee_code)
+    if not owns_submitted_record and not matches_demo_employee_code:
         raise HTTPException(status_code=403, detail="You can only access your own travel expense entries")
 
 
@@ -262,6 +265,13 @@ def upload_claim(
     department: str = Form("Unknown"),
     start_date: Optional[str] = Form(None),
     end_date: Optional[str] = Form(None),
+    trip_settlement_date: Optional[str] = Form(None),
+    trip_number: Optional[str] = Form(None),
+    trip_activity: Optional[str] = Form(None),
+    trip_boundary: Optional[str] = Form(None),
+    to_country: Optional[str] = Form(None),
+    expense_type: Optional[str] = Form(None),
+    trip_duration_days: Optional[int] = Form(None),
     destination_city: Optional[str] = Form(None),
     claim_total: float = Form(0.0),
     currency: str = Form("SAR"),
@@ -269,15 +279,27 @@ def upload_claim(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("employee", "reviewer", "administrator")),
 ):
-    if current_user.role == "employee" and current_user.employee_code and employee_id != current_user.employee_code:
-        raise HTTPException(status_code=403, detail="Employees can upload only their own travel expense entries")
+    parsed_start_date = date.fromisoformat(start_date) if start_date else None
+    parsed_end_date = date.fromisoformat(end_date) if end_date else None
+    parsed_settlement_date = date.fromisoformat(trip_settlement_date) if trip_settlement_date else None
+    inferred_duration = trip_duration_days
+    if inferred_duration is None and parsed_start_date and parsed_end_date:
+        inferred_duration = max(1, (parsed_end_date - parsed_start_date).days + 1)
 
     claim = Claim(
         employee_id=employee_id,
         employee_name=employee_name,
         department=department,
-        start_date=date.fromisoformat(start_date) if start_date else None,
-        end_date=date.fromisoformat(end_date) if end_date else None,
+        start_date=parsed_start_date,
+        end_date=parsed_end_date,
+        trip_settlement_date=parsed_settlement_date,
+        trip_number=trip_number,
+        trip_activity=trip_activity or "Business Trip",
+        trip_boundary=trip_boundary,
+        to_country=to_country,
+        to_city=destination_city,
+        expense_type=expense_type or "Travel Expense Entry",
+        trip_duration_days=inferred_duration,
         destination_city=destination_city,
         claim_total=claim_total,
         currency=currency,
@@ -332,14 +354,6 @@ def import_excel_claims(
         content=content,
         mime_type=file.content_type,
     )
-
-    existing_excel_claims = db.execute(select(Claim).where(Claim.source_type == "excel_import")).scalars().all()
-    stale_claim_ids = [item.claim_id for item in existing_excel_claims]
-    for old_claim in existing_excel_claims:
-        db.delete(old_claim)
-    db.commit()
-    for claim_id in stale_claim_ids:
-        delete_claim_storage(claim_id)
 
     imported = 0
     analyzed = 0
@@ -426,6 +440,16 @@ def import_excel_claims(
             db.rollback()
             errors.append(f"{claim_payload.get('source_reference', 'unknown row')}: {exc}")
 
+    total_imported_claims = db.scalar(select(func.count()).select_from(Claim).where(Claim.source_type == "excel_import")) or 0
+    total_analyzed_claims = db.scalar(
+        select(func.count())
+        .select_from(Claim)
+        .where(Claim.source_type == "excel_import", Claim.status.in_(["analyzed", "under_review"]))
+    ) or 0
+
+    prior_metadata = get_active_import_metadata() or {}
+    prior_claim_ids = prior_metadata.get("claim_ids") if isinstance(prior_metadata.get("claim_ids"), list) else []
+
     set_active_import_metadata(
         {
             "file_name": source_name,
@@ -434,10 +458,13 @@ def import_excel_claims(
             "file_hash": source_hash,
             "uploaded_at": datetime.utcnow().isoformat(),
             "uploaded_by": current_user.username,
-            "row_count": imported,
-            "analyzed_count": analyzed,
+            "row_count": int(total_imported_claims),
+            "analyzed_count": int(total_analyzed_claims),
             "error_count": len(errors),
-            "claim_ids": claim_ids,
+            "last_imported_count": imported,
+            "last_analyzed_count": analyzed,
+            "append_mode": True,
+            "claim_ids": [*prior_claim_ids, *claim_ids],
         }
     )
 
@@ -448,6 +475,24 @@ def import_excel_claims(
         errors=errors,
         claim_ids=claim_ids,
     )
+
+
+@router.delete("/claims/clear-all")
+def clear_all_claims(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("reviewer", "administrator")),
+):
+    claims = db.execute(select(Claim)).scalars().all()
+    claim_ids = [claim.claim_id for claim in claims]
+    for claim in claims:
+        db.delete(claim)
+    db.commit()
+
+    for claim_id in claim_ids:
+        delete_claim_storage(claim_id)
+    clear_active_import_metadata()
+
+    return {"deleted_claims": len(claim_ids), "status": "cleared"}
 
 
 def _load_active_spreadsheet_preview(max_rows: int = 5000) -> SpreadsheetPreviewOut:
@@ -630,8 +675,11 @@ def list_claims(
             )
         )
 
-    if current_user.role == "employee" and current_user.employee_code:
-        stmt = stmt.where(Claim.employee_id == current_user.employee_code)
+    if current_user.role == "employee":
+        employee_filters = [Claim.submitted_by_user_id == current_user.user_id]
+        if current_user.employee_code:
+            employee_filters.append(Claim.employee_id == current_user.employee_code)
+        stmt = stmt.where(or_(*employee_filters))
 
     total = int(db.execute(select(func.count()).select_from(stmt.subquery())).scalar() or 0)
 
@@ -1033,7 +1081,7 @@ def claim_chat(
     claim_id: str,
     payload: ClaimChatRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("employee", "reviewer", "administrator")),
+    current_user: User = Depends(require_roles("reviewer", "administrator")),
 ):
     claim = (
         db.execute(
@@ -1068,7 +1116,7 @@ def claim_chat_debug(
     claim_id: str,
     payload: ClaimChatRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("employee", "reviewer", "administrator")),
+    current_user: User = Depends(require_roles("reviewer", "administrator")),
 ):
     claim = (
         db.execute(
@@ -1099,7 +1147,7 @@ def claim_chat_stream(
     claim_id: str,
     payload: ClaimChatRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("employee", "reviewer", "administrator")),
+    current_user: User = Depends(require_roles("reviewer", "administrator")),
 ):
     claim = (
         db.execute(
@@ -1392,11 +1440,10 @@ def employee_dashboard(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("employee", "reviewer", "administrator")),
 ):
-    employee_id = current_user.employee_code
-    if not employee_id:
-        raise HTTPException(status_code=400, detail="Current user has no employee code assigned")
-
-    base = select(Claim).where(Claim.employee_id == employee_id)
+    employee_filters = [Claim.submitted_by_user_id == current_user.user_id]
+    if current_user.employee_code:
+        employee_filters.append(Claim.employee_id == current_user.employee_code)
+    base = select(Claim).where(or_(*employee_filters))
     claims = db.execute(base.order_by(Claim.created_at.desc())).scalars().all()
 
     total_claims = len(claims)
@@ -1405,7 +1452,7 @@ def employee_dashboard(
     suspicious_claims = len([item for item in claims if item.suspicious_flag])
 
     return EmployeeDashboardOut(
-        employee_id=employee_id,
+        employee_id=current_user.employee_code or current_user.username,
         total_claims=total_claims,
         pending_claims=pending_claims,
         analyzed_claims=analyzed_claims,

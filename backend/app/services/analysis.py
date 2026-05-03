@@ -71,6 +71,13 @@ def process_document(db: Session, document: ReceiptDocument) -> None:
     _replace_document_fields(db, document, fields)
 
 
+def _document_needs_processing(document: ReceiptDocument) -> bool:
+    """Avoid re-running OCR/Docling every time a reviewer opens analysis."""
+    if document.mime_type == "application/x-structured-claim":
+        return not document.extracted_fields
+    return document.extracted_text is None and not document.extracted_fields
+
+
 def _compute_claim_flags(detection_payloads: List[Dict], risk: Dict) -> Tuple[bool, bool]:
     suspicious = bool(detection_payloads) or risk["risk_score"] >= 20
     incorrect = risk["risk_score"] >= 40 or any(
@@ -98,7 +105,8 @@ def analyze_claim(db: Session, claim_id: str) -> tuple[Claim, int, float, str]:
         raise ValueError("Travel expense entry not found")
 
     for document in claim.documents:
-        process_document(db, document)
+        if _document_needs_processing(document):
+            process_document(db, document)
     db.flush()
     db.expire_all()
 
