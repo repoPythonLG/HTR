@@ -200,6 +200,29 @@ type ChatDebugState = {
   question?: string
 }
 
+const chatExampleQuestions = [
+  {
+    title: 'Full risk analysis',
+    question: 'Create an in-depth risk analysis for this travel expense entry. Explain every finding, why it matters, how severe it is, and what the reviewer should verify first.'
+  },
+  {
+    title: 'What is wrong?',
+    question: 'What exactly is wrong or unusual about this travel expense entry? Focus on overlapping trips, amount anomalies, location cost issues, dates, vendor patterns, and any contradictions.'
+  },
+  {
+    title: 'Evidence coverage',
+    question: 'Does the supporting evidence fully cover this travel expense entry? Compare the attached receipt documents against the table entry amount, trip dates, destination, vendor, and employee.'
+  },
+  {
+    title: 'Document concerns',
+    question: 'What is strange or suspicious about the supporting receipt documents? Check OCR/extracted text, missing fields, mismatched values, weak evidence, or anything that does not support the entry.'
+  },
+  {
+    title: 'Amount justification',
+    question: 'Is the amount justifiable compared with peer entries, destination cost expectations, thresholds, and trip duration? Use tables where helpful and state whether the reviewer should approve, reject, or escalate.'
+  }
+]
+
 type DocumentPreviewKind = 'image' | 'pdf' | 'text' | 'spreadsheet' | 'other'
 
 type ViewerOffset = {
@@ -826,11 +849,11 @@ export function ClaimAnalysisPage() {
     chatShouldStickToBottomRef.current = distanceFromBottom < 56
   }
 
-  async function sendChat() {
+  async function sendChat(overrideMessage?: string) {
     if (!activeReceiptId) return
     if (chatLoading) return
 
-    const message = chatInput.trim()
+    const message = (overrideMessage ?? chatInput).trim()
     if (!message) return
 
     const history = chatMessages
@@ -886,6 +909,11 @@ export function ClaimAnalysisPage() {
   function handleChatSubmit(event: FormEvent) {
     event.preventDefault()
     void sendChat()
+  }
+
+  function handleExampleQuestion(question: string) {
+    setChatInput(question)
+    void sendChat(question)
   }
 
   function handleChatKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
@@ -1330,7 +1358,21 @@ export function ClaimAnalysisPage() {
                         <div className="chat-empty-state">
                           <AnalyzeIcon size={28} />
                           <strong>Ask about this entry, its findings, receipts, case file, decisions, or audit timeline.</strong>
-                          <span>Example: explain why this entry is high risk and what evidence I should verify first.</span>
+                          <span>Start with one of these reviewer prompts, or type your own question below.</span>
+                          <div className="chat-example-grid" aria-label="Example chat questions">
+                            {chatExampleQuestions.map((example) => (
+                              <button
+                                key={example.title}
+                                type="button"
+                                className="chat-example-card"
+                                onClick={() => handleExampleQuestion(example.question)}
+                                disabled={chatLoading}
+                              >
+                                <strong>{example.title}</strong>
+                                <span>{example.question}</span>
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       )}
                       {chatMessages.map((message, index) => (
