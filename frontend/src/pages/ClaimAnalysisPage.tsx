@@ -104,6 +104,21 @@ function renderMarkdownInline(line: string, lineIndex: number): ReactNode {
 
 function renderMarkdownLite(text: string): ReactNode {
   return text.split('\n').map((line, lineIndex) => {
+    const headingMatch = line.match(/^\s{0,3}(#{1,6})\s+(.+)$/)
+    if (headingMatch) {
+      const level = Math.min(headingMatch[1].length, 3)
+      return (
+        <span key={`line-${lineIndex}`} className={`chat-markdown-heading level-${level}`}>
+          {renderMarkdownInline(headingMatch[2], lineIndex)}
+        </span>
+      )
+    }
+
+    const horizontalRule = line.match(/^\s*(-{3,}|\*{3,}|_{3,})\s*$/)
+    if (horizontalRule) {
+      return <span key={`line-${lineIndex}`} className="chat-markdown-rule" aria-hidden="true" />
+    }
+
     return (
       <span key={`line-${lineIndex}`} className="chat-markdown-line">
         {renderMarkdownInline(line, lineIndex)}
@@ -650,6 +665,8 @@ export function ClaimAnalysisPage() {
   const [chatDebugOpen, setChatDebugOpen] = useState(false)
   const documentInputRef = useRef<HTMLInputElement | null>(null)
   const chatAbortRef = useRef<AbortController | null>(null)
+  const chatMessagesRef = useRef<HTMLDivElement | null>(null)
+  const chatShouldStickToBottomRef = useRef(true)
   const panStartRef = useRef<{ pointerId: number; x: number; y: number; offsetX: number; offsetY: number } | null>(null)
 
   const canReview = user?.role === 'reviewer' || user?.role === 'administrator'
@@ -721,7 +738,26 @@ export function ClaimAnalysisPage() {
     setChatError(undefined)
     setChatDebug(null)
     setChatDebugOpen(false)
+    chatShouldStickToBottomRef.current = true
   }, [activeReceiptId])
+
+  useEffect(() => {
+    if (!chatShouldStickToBottomRef.current) return
+    const container = chatMessagesRef.current
+    if (!container) return
+
+    requestAnimationFrame(() => {
+      container.scrollTop = container.scrollHeight
+    })
+  }, [chatMessages, chatLoading])
+
+  function handleChatScroll() {
+    const container = chatMessagesRef.current
+    if (!container) return
+
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+    chatShouldStickToBottomRef.current = distanceFromBottom < 56
+  }
 
   async function sendChat() {
     if (!activeReceiptId) return
@@ -736,6 +772,7 @@ export function ClaimAnalysisPage() {
     const controller = new AbortController()
 
     chatAbortRef.current = controller
+    chatShouldStickToBottomRef.current = true
     setChatMessages(nextMessages)
     setChatInput('')
     setChatError(undefined)
@@ -1221,7 +1258,7 @@ export function ClaimAnalysisPage() {
                         Debug
                       </button>
                     </div>
-                    <div className="entry-chat-messages" aria-live="polite">
+                    <div className="entry-chat-messages" ref={chatMessagesRef} onScroll={handleChatScroll} aria-live="polite">
                       {!chatMessages.length && (
                         <div className="chat-empty-state">
                           <AnalyzeIcon size={28} />

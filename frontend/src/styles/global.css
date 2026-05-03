@@ -2847,6 +2847,31 @@ button:disabled {
   white-space: pre-wrap;
 }
 
+.chat-markdown-heading {
+  color: var(--text);
+  display: block;
+  font-weight: 950;
+  line-height: 1.25;
+  margin: 0.55rem 0 0.25rem;
+  white-space: pre-wrap;
+}
+
+.chat-markdown-heading.level-1 {
+  font-size: 1.12rem;
+}
+
+.chat-markdown-heading.level-2,
+.chat-markdown-heading.level-3 {
+  font-size: 1.02rem;
+}
+
+.chat-markdown-rule {
+  display: block;
+  height: 1px;
+  margin: 0.7rem 0;
+  background: rgba(190, 209, 234, 0.85);
+}
+
 .chat-message.user {
   justify-self: end;
   background: #eef4ff;
