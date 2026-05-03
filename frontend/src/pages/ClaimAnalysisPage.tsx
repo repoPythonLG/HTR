@@ -102,29 +102,96 @@ function renderMarkdownInline(line: string, lineIndex: number): ReactNode {
   return parts.length ? parts : '\u00a0'
 }
 
+function splitMarkdownTableRow(line: string) {
+  const trimmed = line.trim()
+  const withoutEdges = trimmed.replace(/^\|/, '').replace(/\|$/, '')
+  return withoutEdges.split('|').map((cell) => cell.trim())
+}
+
+function isMarkdownTableSeparator(line: string) {
+  const cells = splitMarkdownTableRow(line)
+  return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell))
+}
+
+function isMarkdownTableStart(lines: string[], index: number) {
+  const current = lines[index]
+  const next = lines[index + 1]
+  if (!current || !next) return false
+  return current.includes('|') && splitMarkdownTableRow(current).length > 1 && isMarkdownTableSeparator(next)
+}
+
 function renderMarkdownLite(text: string): ReactNode {
-  return text.split('\n').map((line, lineIndex) => {
+  const lines = text.split('\n')
+  const nodes: ReactNode[] = []
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex]
+
+    if (isMarkdownTableStart(lines, lineIndex)) {
+      const headerCells = splitMarkdownTableRow(line)
+      const bodyRows: string[][] = []
+      let tableIndex = lineIndex + 2
+
+      while (tableIndex < lines.length && lines[tableIndex].includes('|')) {
+        const row = splitMarkdownTableRow(lines[tableIndex])
+        if (!row.some(Boolean)) break
+        bodyRows.push(row)
+        tableIndex += 1
+      }
+
+      nodes.push(
+        <div key={`table-${lineIndex}`} className="chat-markdown-table-wrap">
+          <table className="chat-markdown-table">
+            <thead>
+              <tr>
+                {headerCells.map((cell, cellIndex) => (
+                  <th key={`head-${lineIndex}-${cellIndex}`}>{renderMarkdownInline(cell, lineIndex)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {bodyRows.map((row, rowIndex) => (
+                <tr key={`row-${lineIndex}-${rowIndex}`}>
+                  {headerCells.map((_, cellIndex) => (
+                    <td key={`cell-${lineIndex}-${rowIndex}-${cellIndex}`}>
+                      {renderMarkdownInline(row[cellIndex] || '', lineIndex + rowIndex + 2)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )
+      lineIndex = tableIndex - 1
+      continue
+    }
+
     const headingMatch = line.match(/^\s{0,3}(#{1,6})\s+(.+)$/)
     if (headingMatch) {
       const level = Math.min(headingMatch[1].length, 3)
-      return (
+      nodes.push(
         <span key={`line-${lineIndex}`} className={`chat-markdown-heading level-${level}`}>
           {renderMarkdownInline(headingMatch[2], lineIndex)}
         </span>
       )
+      continue
     }
 
     const horizontalRule = line.match(/^\s*(-{3,}|\*{3,}|_{3,})\s*$/)
     if (horizontalRule) {
-      return <span key={`line-${lineIndex}`} className="chat-markdown-rule" aria-hidden="true" />
+      nodes.push(<span key={`line-${lineIndex}`} className="chat-markdown-rule" aria-hidden="true" />)
+      continue
     }
 
-    return (
+    nodes.push(
       <span key={`line-${lineIndex}`} className="chat-markdown-line">
         {renderMarkdownInline(line, lineIndex)}
       </span>
     )
-  })
+  }
+
+  return nodes
 }
 
 type ChatDebugState = {
