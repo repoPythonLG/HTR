@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from pypdf import PdfReader
+
+from app.core.config import settings
 
 
 @dataclass
@@ -53,20 +56,83 @@ def _is_useful_text(text: str, file_name: str = "") -> bool:
     return sum(1 for token in useful_tokens if token in lower) >= 2
 
 
-def _extract_docling_text(path: Path) -> tuple[str, int]:
-    from docling.document_converter import DocumentConverter
+def _docling_artifacts_path() -> Path:
+    return settings.docling_artifacts_path or settings.offline_model_root / "docling"
 
-    converted = DocumentConverter().convert(str(path))
+
+def _easyocr_model_dir() -> Path:
+    configured = settings.easyocr_model_dir
+    if configured:
+        return configured
+    docling_easyocr = _docling_artifacts_path() / "EasyOcr"
+    if docling_easyocr.exists():
+        return docling_easyocr
+    return settings.offline_model_root / "easyocr"
+
+
+@lru_cache(maxsize=1)
+def _docling_converter():
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import EasyOcrOptions, PdfPipelineOptions
+    from docling.document_converter import DocumentConverter, ImageFormatOption, PdfFormatOption
+
+    pipeline_options = PdfPipelineOptions()
+    pipeline_options.artifacts_path = _docling_artifacts_path()
+    pipeline_options.ocr_options = EasyOcrOptions(
+        lang=["en"],
+        use_gpu=False,
+        model_storage_directory=str(_easyocr_model_dir()),
+        download_enabled=settings.extraction_download_enabled,
+    )
+    return DocumentConverter(
+        format_options={
+            InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
+            InputFormat.IMAGE: ImageFormatOption(pipeline_options=pipeline_options),
+        }
+    )
+
+
+@lru_cache(maxsize=1)
+def _easyocr_reader():
+    import easyocr
+
+    return easyocr.Reader(
+        ["en"],
+        gpu=False,
+        model_storage_directory=str(_easyocr_model_dir()),
+        download_enabled=settings.extraction_download_enabled,
+        verbose=False,
+    )
+
+
+def _extract_docling_text(path: Path) -> tuple[str, int]:
+    converted = _docling_converter().convert(str(path))
     text = converted.document.export_to_markdown()
     return text.strip(), 1
 
 
 def _extract_easyocr_text(path: Path) -> tuple[str, int]:
-    import easyocr
-
-    reader = easyocr.Reader(["en"], gpu=False, verbose=False)
-    lines = reader.readtext(str(path), detail=0, paragraph=True)
+    lines = _easyocr_reader().readtext(str(path), detail=0, paragraph=True)
     return "\n".join(str(line) for line in lines if line).strip(), 1
+
+
+def _merge_extracted_text(primary: str, secondary: str) -> str:
+    if not primary:
+        return secondary.strip()
+    if not secondary:
+        return primary.strip()
+
+    seen = {" ".join(line.casefold().split()) for line in primary.splitlines() if line.strip()}
+    merged_lines = [line for line in primary.splitlines() if line.strip()]
+    extra_lines = []
+    for line in secondary.splitlines():
+        cleaned = " ".join(line.casefold().split())
+        if cleaned and cleaned not in seen:
+            extra_lines.append(line.strip())
+            seen.add(cleaned)
+    if not extra_lines:
+        return primary.strip()
+    return "\n".join([*merged_lines, "", "Additional OCR text:", *extra_lines]).strip()
 
 
 def _parse_money(value: str) -> str:
@@ -188,6 +254,13 @@ def extract_document(file_path: str, mime_type: str, file_name: str) -> Extracti
         except Exception as exc:
             extraction_errors.append(f"docling: {exc}")
             text = ""
+
+        try:
+            easyocr_text, easyocr_page_count = _extract_easyocr_text(path)
+            page_count = max(page_count, easyocr_page_count)
+            text = _merge_extracted_text(text, easyocr_text)
+        except Exception as exc:
+            extraction_errors.append(f"easyocr: {exc}")
 
         if not _is_useful_text(text, file_name):
             try:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any, Dict, Iterator, List, Tuple
 
 from app.core.config import settings
@@ -26,42 +25,40 @@ def _stored_text_is_placeholder(document: ReceiptDocument) -> bool:
 def _display_label(value: str | None) -> str:
     if not value:
         return "Not recorded"
+    labels = {
+        "amount_outlier_abnormality": "Daily Cost Outlier",
+        "amount_above_peer_mean_threshold": "Daily Cost Above Peer Mean",
+        "location_cost_anomaly": "Location-Adjusted Daily Cost Anomaly",
+    }
+    if value in labels:
+        return labels[value]
     return value.replace("_", " ").replace("-", " ").title()
 
 
-def _document_text_with_optional_ocr(document: ReceiptDocument) -> Tuple[str, Dict[str, Any]]:
-    if document.extracted_text and not _stored_text_is_placeholder(document):
-        return document.extracted_text, {"source": "stored_extracted_text", "status": "available"}
+def _document_text_from_database(document: ReceiptDocument) -> Tuple[str, Dict[str, Any]]:
+    text = document.extracted_text or ""
+    if not text.strip():
+        return "", {
+            "source": "stored_extracted_text",
+            "status": "missing",
+            "extraction_lifecycle": "upload_only",
+            "note": "No stored extraction is available. Upload/reprocess the document instead of extracting during chat.",
+        }
 
-    path = Path(document.file_path)
-    if not path.exists():
-        return "", {"source": "file", "status": "missing"}
+    if _stored_text_is_placeholder(document):
+        return text, {
+            "source": "stored_extracted_text",
+            "status": "stored_placeholder_or_failed_extraction",
+            "extraction_lifecycle": "upload_only",
+            "note": "Chat uses the stored extraction result and does not re-run Docling or EasyOCR.",
+        }
 
-    try:
-        from docling.document_converter import DocumentConverter
-
-        converted = DocumentConverter().convert(str(path))
-        text = converted.document.export_to_markdown()
-        if text.strip():
-            return text, {"source": "docling", "status": "extracted"}
-    except Exception as exc:  # pragma: no cover - optional integration depends on local native packages
-        docling_error = str(exc)
-    else:
-        docling_error = "No text returned"
-
-    if document.mime_type.startswith("image/"):
-        try:
-            import easyocr
-
-            reader = easyocr.Reader(["en"], gpu=False)
-            lines = reader.readtext(str(path), detail=0, paragraph=True)
-            text = "\n".join(str(line) for line in lines if line)
-            if text.strip():
-                return text, {"source": "easyocr", "status": "extracted"}
-        except Exception as exc:  # pragma: no cover - optional integration depends on local native packages
-            return "", {"source": "easyocr", "status": "failed", "error": str(exc), "docling_error": docling_error}
-
-    return "", {"source": "docling", "status": "failed", "error": docling_error}
+    return text, {
+        "source": "stored_extracted_text",
+        "status": "available",
+        "extraction_lifecycle": "upload_only",
+        "note": "Extracted once during upload; reused from database for chat.",
+    }
 
 
 def _compact_json(value: Any) -> str:
@@ -118,73 +115,74 @@ def _finding_reviewer_comparison(detection_type: str, facts: Dict[str, Any], cla
             "Check whether the employee could reasonably be in both destinations during the overlap.",
             "Compare receipts, hotel dates, travel approvals, and booking records for both entries.",
         ]
-    elif detection_type in {"weekend_buffer_days", "extended_stay"}:
-        allowed = facts.get("allowed_days") or facts.get("expected_duration_days") or facts.get("policy_allowed_days")
-        actual = facts.get("stay_days") or facts.get("trip_duration_days") or claim.trip_duration_days
-        comparison["plain_english"] = "Trip duration exceeds the expected business-travel window plus policy buffer."
-        comparison["comparison_points"] = [
-            f"This entry duration: {actual} days.",
-            f"Allowed/reference duration: {allowed if allowed is not None else 'not recorded'} days.",
-        ]
-        comparison["reviewer_focus"] = ["Ask for agenda, training schedule, approval, or justification for the extra stay."]
     elif detection_type == "amount_above_peer_mean_threshold":
         amount = facts.get("claim_amount") or claim.claim_total
-        mean = facts.get("peer_mean")
-        threshold_amount = facts.get("threshold_amount")
-        uplift = facts.get("uplift_vs_mean_pct")
+        duration = facts.get("trip_duration_days") or claim.trip_duration_days or 1
+        daily_amount = facts.get("claim_daily_amount")
+        mean = facts.get("peer_mean_daily_amount") or facts.get("peer_mean")
+        threshold_amount = facts.get("daily_threshold_amount") or facts.get("threshold_amount")
+        uplift = facts.get("uplift_vs_daily_mean_pct") or facts.get("uplift_vs_mean_pct")
         threshold_pct = facts.get("configured_threshold_pct")
-        comparison["plain_english"] = "Amount is above the configured peer-mean threshold."
+        comparison["plain_english"] = "Daily cost is above the configured peer daily-mean threshold."
         comparison["comparison_points"] = [
-            f"This entry amount: {_money(amount, claim.currency)}.",
-            f"Peer mean: {_money(mean, claim.currency)}.",
-            f"Configured limit: {_money(threshold_amount, claim.currency)} ({_percent(threshold_pct)} above peer mean).",
-            f"Variance versus peer mean: {_percent(uplift)}.",
+            f"This entry total: {_money(amount, claim.currency)} across {duration} days.",
+            f"This entry daily cost: {_money(daily_amount, claim.currency)} per day.",
+            f"Peer daily mean: {_money(mean, claim.currency)} per day.",
+            f"Configured daily limit: {_money(threshold_amount, claim.currency)} per day ({_percent(threshold_pct)} above peer daily mean).",
+            f"Variance versus peer daily mean: {_percent(uplift)}.",
         ]
         comparison["reviewer_focus"] = ["Verify itemised invoice lines and business justification for the variance."]
     elif detection_type in {"location_adjusted_threshold_pct", "location_cost_anomaly"}:
         amount = facts.get("claim_amount") or claim.claim_total
-        adjusted_amount = facts.get("location_adjusted_claim_amount") or facts.get("location_adjusted_amount")
-        adjusted_mean = facts.get("peer_mean_location_adjusted_amount") or facts.get("adjusted_peer_mean")
-        adjusted_limit = facts.get("location_adjusted_threshold_amount") or facts.get("adjusted_limit")
+        duration = facts.get("trip_duration_days") or claim.trip_duration_days or 1
+        daily_amount = facts.get("claim_daily_amount")
+        adjusted_amount = (
+            facts.get("location_adjusted_daily_amount")
+            or facts.get("location_adjusted_claim_amount")
+            or facts.get("location_adjusted_amount")
+        )
+        adjusted_mean = (
+            facts.get("peer_mean_location_adjusted_daily_amount")
+            or facts.get("peer_mean_location_adjusted_amount")
+            or facts.get("adjusted_peer_mean")
+        )
+        adjusted_limit = (
+            facts.get("location_adjusted_daily_threshold_amount")
+            or facts.get("location_adjusted_threshold_amount")
+            or facts.get("adjusted_limit")
+        )
         factor = facts.get("location_cost_factor")
         uplift = facts.get("uplift_vs_location_adjusted_mean_pct")
-        comparison["plain_english"] = "Amount remains high after adjusting for destination country/city cost level."
+        comparison["plain_english"] = "Daily cost remains high after adjusting for destination country/city cost level."
         comparison["comparison_points"] = [
-            f"This entry amount: {_money(amount, claim.currency)}.",
-            f"Location-adjusted amount: {_money(adjusted_amount, claim.currency)}.",
-            f"Adjusted peer mean: {_money(adjusted_mean, claim.currency)}.",
-            f"Adjusted limit: {_money(adjusted_limit, claim.currency)}.",
+            f"This entry total: {_money(amount, claim.currency)} across {duration} days.",
+            f"This entry daily cost: {_money(daily_amount, claim.currency)} per day.",
+            f"Location-adjusted daily cost: {_money(adjusted_amount, claim.currency)} per day.",
+            f"Adjusted peer daily mean: {_money(adjusted_mean, claim.currency)} per day.",
+            f"Adjusted daily limit: {_money(adjusted_limit, claim.currency)} per day.",
             f"Variance versus location-adjusted peer mean: {_percent(uplift)}.",
             f"Destination cost factor: {factor if factor is not None else 'not recorded'}.",
         ]
         comparison["reviewer_focus"] = ["Check whether destination pricing explains the amount; if not, request itemised support."]
     elif detection_type in {"outlier_min_sample_size", "amount_outlier_abnormality"}:
         amount = facts.get("claim_amount") or claim.claim_total
-        mean = facts.get("peer_mean")
-        median = facts.get("peer_median")
-        upper = facts.get("iqr_upper_bound")
+        duration = facts.get("trip_duration_days") or claim.trip_duration_days or 1
+        daily_amount = facts.get("claim_daily_amount")
+        mean = facts.get("peer_mean_daily_amount") or facts.get("peer_mean")
+        median = facts.get("peer_median_daily_amount") or facts.get("peer_median")
+        upper = facts.get("daily_iqr_upper_bound") or facts.get("iqr_upper_bound")
         z_score = facts.get("z_score")
         robust = facts.get("robust_z_score")
-        comparison["plain_english"] = "Amount is statistically outside the normal peer distribution."
+        comparison["plain_english"] = "Daily cost is statistically outside the normal peer distribution."
         comparison["comparison_points"] = [
-            f"This entry amount: {_money(amount, claim.currency)}.",
-            f"Peer median: {_money(median, claim.currency)}.",
-            f"Peer mean: {_money(mean, claim.currency)}.",
-            f"Outlier upper bound: {_money(upper, claim.currency)}.",
+            f"This entry total: {_money(amount, claim.currency)} across {duration} days.",
+            f"This entry daily cost: {_money(daily_amount, claim.currency)} per day.",
+            f"Peer daily median: {_money(median, claim.currency)} per day.",
+            f"Peer daily mean: {_money(mean, claim.currency)} per day.",
+            f"Daily outlier upper bound: {_money(upper, claim.currency)} per day.",
             f"Z-score: {z_score if z_score is not None else 'not recorded'}; robust z-score: {robust if robust is not None else 'not recorded'}.",
         ]
         comparison["reviewer_focus"] = ["Compare against similar activity, boundary, country/city, and expense type."]
-    elif detection_type in {"vendor_concentration_rule", "vendor_concentration"}:
-        vendor = facts.get("vendor")
-        share = facts.get("vendor_share")
-        sample_size = facts.get("sample_size")
-        comparison["plain_english"] = "A single vendor represents an unusually large share of this employee's travel expense history."
-        comparison["comparison_points"] = [
-            f"Vendor: {vendor or 'not recorded'}.",
-            f"Vendor share: {_percent(float(share) * 100) if isinstance(share, (int, float)) and share <= 1 else _percent(share)}.",
-            f"Sample size: {sample_size if sample_size is not None else 'not recorded'} entries.",
-        ]
-        comparison["reviewer_focus"] = ["Check whether vendor usage is expected for this role/travel pattern or indicates repeat unsupported spend."]
     else:
         comparison["plain_english"] = "This finding contributes to the overall risk score."
         comparison["comparison_points"] = [f"Supporting facts are available under the {label} finding."]
@@ -224,7 +222,7 @@ def build_claim_chat_context(claim: Claim) -> Tuple[str, List[str], Dict[str, An
     extraction_status: Dict[str, Any] = {}
 
     for document in claim.documents:
-        text, status = _document_text_with_optional_ocr(document)
+        text, status = _document_text_from_database(document)
         full_text = text or ""
         context_text = full_text[:MAX_DOCUMENT_TEXT_CONTEXT_CHARS]
         extraction_status[document.document_id] = {
@@ -450,9 +448,8 @@ def _chat_settings_ready() -> bool:
 
 
 def answer_claim_chat(claim: Claim, message: str, history: List[Dict[str, str]]) -> Dict[str, Any]:
-    _, sources, extraction_status = build_claim_chat_context(claim)
-
     if not _chat_settings_ready():
+        _, sources, extraction_status = build_claim_chat_context(claim)
         return {
             "answer": _fallback_not_configured(),
             "model": "not-configured",
@@ -464,6 +461,8 @@ def answer_claim_chat(claim: Claim, message: str, history: List[Dict[str, str]])
         messages, sources, extraction_status = _build_chat_messages(claim, message, history)
         llm = _chat_llm()
     except Exception as exc:  # pragma: no cover - optional integration depends on installed packages
+        sources = []
+        extraction_status: Dict[str, Any] = {}
         return {
             "answer": _fallback_missing_dependency(exc),
             "model": "dependency-missing",

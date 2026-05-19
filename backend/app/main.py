@@ -40,4 +40,9 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/healthz")
+def healthz() -> dict[str, str]:
+    return health()
+
+
 app.include_router(router, prefix=settings.api_prefix)

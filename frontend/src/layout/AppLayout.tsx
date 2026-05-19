@@ -1,8 +1,9 @@
 import dayjs from 'dayjs'
 import { ReactNode } from 'react'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { AdminIcon, ReceiptsIcon, DashboardIcon, EmployeeIcon, SabicIcon, UploadIcon } from '../components/BrandIcons'
 import { useAuth } from '../context/AuthContext'
+import { UserRole } from '../types'
 
 function NavItem({ to, label, icon, activePaths = [] }: { to: string; label: string; icon: ReactNode; activePaths?: string[] }) {
   const location = useLocation()
@@ -22,9 +23,26 @@ function NavItem({ to, label, icon, activePaths = [] }: { to: string; label: str
 }
 
 export function AppLayout() {
-  const { user, logoutUser } = useAuth()
+  const { user, selectRole } = useAuth()
+  const location = useLocation()
+  const navigate = useNavigate()
   const canSeeAdvanced = user?.role === 'reviewer' || user?.role === 'administrator'
   const canSeeReviewWorkspace = user?.role === 'reviewer' || user?.role === 'administrator'
+
+  function handleRoleChange(role: UserRole) {
+    selectRole(role)
+    if (role === 'employee') {
+      navigate('/employee', { replace: true })
+      return
+    }
+    if (location.pathname.startsWith('/employee')) {
+      navigate('/receipts', { replace: true })
+      return
+    }
+    if (role !== 'administrator' && location.pathname.startsWith('/admin')) {
+      navigate('/advanced', { replace: true })
+    }
+  }
 
   return (
     <div className="shell">
@@ -72,12 +90,19 @@ export function AppLayout() {
       <div className="main-area">
         <header className="topbar compact-topbar">
           <div className="topbar-session">
-          <span>Workspace role</span>
-          <strong>{user?.full_name}</strong>
-          <span>{user?.username}</span>
-          <span className="role-pill">{user?.role}</span>
-        </div>
-          <button onClick={logoutUser}>Switch role</button>
+            <span>Workspace role</span>
+            <strong>{user?.full_name}</strong>
+            <span>{user?.username}</span>
+            <span className="role-pill">{user?.role}</span>
+          </div>
+          <label className="role-switcher">
+            <span>Change role</span>
+            <select value={user?.role || 'reviewer'} onChange={(event) => handleRoleChange(event.target.value as UserRole)}>
+              <option value="reviewer">Corporate Reviewer</option>
+              <option value="administrator">Platform Administrator</option>
+              <option value="employee">Employee View</option>
+            </select>
+          </label>
         </header>
 
         <section className="content-area">

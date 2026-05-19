@@ -490,10 +490,30 @@ button:disabled {
   text-overflow: ellipsis;
 }
 
-.compact-topbar > button {
-  padding-inline: 1.05rem;
-  min-height: 2.12rem;
+.role-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--text-soft);
+  font-size: 0.78rem;
   white-space: nowrap;
+}
+
+.role-switcher span {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.role-switcher select {
+  min-height: 2.15rem;
+  min-width: 13.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(141, 178, 224, 0.72);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(236, 244, 255, 0.94));
+  color: var(--text);
+  font-weight: 800;
+  box-shadow: 0 0.65rem 1.5rem rgba(15, 76, 164, 0.12);
 }
 
 .role-pill {
@@ -2202,8 +2222,8 @@ button:disabled {
 
 .rule-list {
   display: grid;
-  gap: 0.4rem;
-  max-height: 430px;
+  gap: 0.62rem;
+  max-height: min(620px, calc(100vh - 20rem));
   overflow: auto;
   padding-right: 0.25rem;
 }
@@ -2215,12 +2235,197 @@ button:disabled {
   color: var(--text);
   box-shadow: 0 6px 12px rgba(21, 64, 124, 0.08);
   font-weight: 600;
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.82rem;
 }
 
 .rule-item.active {
   outline: 0;
   border-color: rgba(85, 129, 199, 0.74);
   box-shadow: inset 0 0 0 2px rgba(92, 134, 203, 0.26), 0 10px 16px rgba(21, 64, 124, 0.12);
+}
+
+.rule-item-topline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.rule-item-topline strong {
+  font-size: 0.94rem;
+  letter-spacing: -0.01em;
+}
+
+.rule-item-topline span {
+  border: 1px solid rgba(181, 204, 232, 0.95);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--brand);
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 850;
+  padding: 0.2rem 0.5rem;
+}
+
+.rule-item p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.38;
+}
+
+.rule-item small {
+  color: #6b7f9f;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.policy-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 1rem;
+  margin-bottom: 0.8rem;
+}
+
+.policy-toolbar p {
+  color: var(--text-soft);
+  margin: 0.28rem 0 0;
+}
+
+.policy-mode-toggle {
+  border: 1px solid rgba(181, 204, 232, 0.95);
+  border-radius: 999px;
+  background: #edf5ff;
+  display: inline-flex;
+  padding: 0.22rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88);
+}
+
+.policy-mode-toggle button {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-soft);
+  min-height: 2rem;
+  padding: 0.35rem 0.75rem;
+}
+
+.policy-mode-toggle button.active {
+  background: #ffffff;
+  color: var(--brand);
+  box-shadow: 0 8px 16px rgba(20, 63, 124, 0.14);
+}
+
+.policy-simple-note,
+.rule-editor-summary {
+  border: 1px solid rgba(181, 204, 232, 0.92);
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(239, 246, 255, 0.92)),
+    radial-gradient(circle at top right, rgba(247, 162, 35, 0.12), transparent 22rem);
+  color: var(--text-soft);
+  display: grid;
+  gap: 0.25rem;
+  margin-bottom: 0.78rem;
+  padding: 0.88rem;
+}
+
+.policy-simple-note strong,
+.rule-editor-summary strong {
+  color: var(--text);
+}
+
+.rule-editor-summary span {
+  color: var(--brand);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.rule-editor-summary p,
+.policy-field-help,
+.field-description {
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.42;
+  margin: 0;
+}
+
+.field-description {
+  display: block;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.risk-settings-panel {
+  flex: 0 0 auto;
+  align-content: start;
+  gap: 0.78rem;
+  min-height: auto;
+  overflow: visible;
+}
+
+.risk-settings-panel .panel-head {
+  align-items: center;
+  margin-right: 2.4rem;
+  padding-bottom: 0.62rem;
+}
+
+.risk-settings-panel .panel-head p {
+  margin: 0.22rem 0 0;
+}
+
+.risk-settings-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: 0.72rem;
+}
+
+.risk-settings-form .split-row {
+  display: contents;
+}
+
+.risk-settings-form label {
+  border: 1px solid rgba(190, 209, 234, 0.76);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 250, 255, 0.92));
+  gap: 0.38rem;
+  min-height: 7.1rem;
+  padding: 0.78rem;
+}
+
+.risk-settings-form input,
+.risk-settings-form select {
+  margin-top: auto;
+}
+
+.risk-settings-form button[type='submit'] {
+  grid-column: 1 / -1;
+  justify-self: start;
+  min-height: 2.85rem;
+  min-width: 14rem;
+  padding-inline: 1.15rem;
+}
+
+.policy-field-help {
+  border-left: 3px solid var(--accent);
+  background: rgba(255, 250, 242, 0.86);
+  border-radius: 12px;
+  padding: 0.7rem 0.78rem;
+}
+
+.policy-combined-fields {
+  display: grid;
+  gap: 0.8rem;
 }
 
 .row-space {
@@ -3618,6 +3823,29 @@ pre {
   box-shadow: 0 10px 22px rgba(8, 38, 83, 0.08);
 }
 
+.invoice-upload-progress-card {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.78rem;
+  border-radius: 14px;
+  border: 1px solid rgba(147, 179, 222, 0.9);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(246, 161, 48, 0.12), transparent 38%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(235, 246, 255, 0.96));
+  box-shadow: 0 12px 24px rgba(8, 38, 83, 0.1);
+}
+
+.invoice-upload-progress-card p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  line-height: 1.42;
+}
+
+.invoice-upload-progress-card .progress-fill {
+  min-width: 0;
+}
+
 .import-progress-head {
   display: flex;
   justify-content: space-between;
@@ -3641,6 +3869,7 @@ pre {
 }
 
 .progress-fill {
+  display: block;
   height: 100%;
   min-width: 0.5rem;
   border-radius: inherit;

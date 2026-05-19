@@ -72,10 +72,10 @@ def process_document(db: Session, document: ReceiptDocument) -> None:
 
 
 def _document_needs_processing(document: ReceiptDocument) -> bool:
-    """Avoid re-running OCR/Docling every time a reviewer opens analysis."""
+    """Keep OCR/Docling on the upload path only, never on analysis/chat reads."""
     if document.mime_type == "application/x-structured-claim":
         return not document.extracted_fields
-    return document.extracted_text is None and not document.extracted_fields
+    return False
 
 
 def _compute_claim_flags(detection_payloads: List[Dict], risk: Dict) -> Tuple[bool, bool]:

@@ -38,7 +38,7 @@ DEFAULT_RULES = [
     },
     {
         "key": "weekend_buffer_days",
-        "name": "Weekend Buffer Days",
+        "name": "Weekend Buffer Days (Inactive)",
         "category": "threshold",
         "threshold": 2.0,
         "unit": "days",
@@ -102,18 +102,18 @@ DEFAULT_RULES = [
     },
     {"key": "weight_duplicate_receipt", "name": "Weight Duplicate Entry", "category": "weight", "threshold": None, "unit": "score", "weight": 30.0},
     {"key": "weight_hotel_above_benchmark", "name": "Weight Accommodation Above Benchmark", "category": "weight", "threshold": None, "unit": "score", "weight": 15.0},
-    {"key": "weight_near_approval_threshold", "name": "Weight Near Approval Threshold", "category": "weight", "threshold": None, "unit": "score", "weight": 15.0},
-    {"key": "weight_extended_stay", "name": "Weight Extended Stay", "category": "weight", "threshold": None, "unit": "score", "weight": 10.0},
+    {"key": "weight_near_approval_threshold", "name": "Weight Near Approval Threshold (Inactive)", "category": "weight", "threshold": None, "unit": "score", "weight": 0.0},
+    {"key": "weight_extended_stay", "name": "Weight Extended Stay (Inactive)", "category": "weight", "threshold": None, "unit": "score", "weight": 0.0},
     {"key": "weight_meal_double_claim", "name": "Weight Meal Double Entry", "category": "weight", "threshold": None, "unit": "score", "weight": 10.0},
     {"key": "weight_non_compliant_booking", "name": "Weight Non-Compliant Booking", "category": "weight", "threshold": None, "unit": "score", "weight": 10.0},
     {"key": "weight_business_class_travel", "name": "Weight Business Class Travel", "category": "weight", "threshold": None, "unit": "score", "weight": 10.0},
     {"key": "weight_overlapping_trips", "name": "Weight Overlapping Trips", "category": "weight", "threshold": None, "unit": "score", "weight": 25.0},
-    {"key": "weight_vendor_concentration", "name": "Weight Vendor Concentration", "category": "weight", "threshold": None, "unit": "score", "weight": 10.0},
+    {"key": "weight_vendor_concentration", "name": "Weight Vendor Concentration (Inactive)", "category": "weight", "threshold": None, "unit": "score", "weight": 0.0},
     {"key": "weight_approver_exception_pattern", "name": "Weight Approver Exception Pattern", "category": "weight", "threshold": None, "unit": "score", "weight": 15.0},
-    {"key": "weight_amount_outlier_abnormality", "name": "Weight Amount Outlier Abnormality", "category": "weight", "threshold": None, "unit": "score", "weight": 22.0},
-    {"key": "weight_trip_duration_outlier_abnormality", "name": "Weight Trip Duration Outlier Abnormality", "category": "weight", "threshold": None, "unit": "score", "weight": 12.0},
-    {"key": "weight_amount_above_peer_mean_threshold", "name": "Weight Amount Above Peer Mean Threshold", "category": "weight", "threshold": None, "unit": "score", "weight": 16.0},
-    {"key": "weight_location_cost_anomaly", "name": "Weight Location Cost Anomaly", "category": "weight", "threshold": None, "unit": "score", "weight": 14.0},
+    {"key": "weight_amount_outlier_abnormality", "name": "Weight Daily Cost Outlier Abnormality", "category": "weight", "threshold": None, "unit": "score", "weight": 22.0},
+    {"key": "weight_trip_duration_outlier_abnormality", "name": "Weight Trip Duration Outlier (Inactive)", "category": "weight", "threshold": None, "unit": "score", "weight": 0.0},
+    {"key": "weight_amount_above_peer_mean_threshold", "name": "Weight Daily Cost Above Peer Mean Threshold", "category": "weight", "threshold": None, "unit": "score", "weight": 16.0},
+    {"key": "weight_location_cost_anomaly", "name": "Weight Location-Adjusted Daily Cost Anomaly", "category": "weight", "threshold": None, "unit": "score", "weight": 14.0},
 ]
 
 
@@ -178,9 +178,18 @@ def _normalized_location_key(value: Optional[str]) -> Optional[str]:
 
 
 def seed_default_policies(db: Session) -> None:
-    existing_keys = {row[0] for row in db.execute(select(PolicyRule.key)).all()}
+    existing_rules = {rule.key: rule for rule in db.execute(select(PolicyRule)).scalars().all()}
     for spec in DEFAULT_RULES:
-        if spec["key"] in existing_keys:
+        existing = existing_rules.get(spec["key"])
+        if existing:
+            if existing.source == "seed":
+                existing.name = spec["name"]
+                existing.category = spec["category"]
+                existing.threshold = spec["threshold"]
+                existing.unit = spec["unit"]
+                existing.weight = spec["weight"]
+            continue
+        if spec["key"] in existing_rules:
             continue
         db.add(
             PolicyRule(

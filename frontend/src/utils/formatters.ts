@@ -15,6 +15,18 @@ export function formatDetectionType(value?: string | null): string {
   const normalized = value.trim()
   if (!normalized) return '-'
 
+  const explicitLabels: Record<string, string> = {
+    amount_outlier_abnormality: 'Daily Cost Outlier',
+    amount_above_peer_mean_threshold: 'Daily Cost Above Peer Mean',
+    location_cost_anomaly: 'Location-Adjusted Daily Cost Anomaly',
+    near_approval_threshold: 'Inactive Total Threshold Rule',
+    extended_stay: 'Inactive Duration Rule',
+    trip_duration_outlier_abnormality: 'Inactive Duration Outlier Rule',
+    vendor_concentration: 'Inactive Vendor Concentration Rule'
+  }
+  const explicit = explicitLabels[normalized.toLowerCase()]
+  if (explicit) return explicit
+
   return normalized
     .replace(/[_-]+/g, ' ')
     .replace(/\s+/g, ' ')

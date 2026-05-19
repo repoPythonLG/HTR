@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
+from urllib.error import HTTPError
 from urllib.request import urlopen
 
 
@@ -283,6 +284,9 @@ def wait_for_url(url: str, timeout_seconds: int) -> bool:
             with urlopen(url, timeout=2) as response:
                 if 200 <= response.status < 500:
                     return True
+        except HTTPError as exc:
+            if 200 <= exc.code < 500:
+                return True
         except Exception:
             time.sleep(1)
     return False
@@ -346,10 +350,21 @@ def main() -> int:
     backend_url = f"http://{backend_host}:{backend_port}"
     frontend_url = f"http://{frontend_host}:{frontend_port}"
     allowed_hosts = cloudera_allowed_hosts(public_host)
+    offline_model_root = ROOT / "backend" / "data" / "models"
+    docling_artifacts_path = offline_model_root / "docling"
+    easyocr_model_dir = docling_artifacts_path / "EasyOcr"
 
     backend_env = os.environ.copy()
     backend_env["CORS_ORIGINS"] = json.dumps(origin_values(public_host, frontend_host, frontend_port))
     backend_env.setdefault("ENVIRONMENT", "local")
+    backend_env.setdefault("OFFLINE_MODEL_ROOT", str(offline_model_root))
+    backend_env.setdefault("DOCLING_ARTIFACTS_PATH", str(docling_artifacts_path))
+    backend_env.setdefault("EASYOCR_MODEL_DIR", str(easyocr_model_dir))
+    backend_env.setdefault("EXTRACTION_DOWNLOAD_ENABLED", "false")
+    backend_env.setdefault("HF_HOME", str(offline_model_root / "huggingface"))
+    backend_env.setdefault("TORCH_HOME", str(offline_model_root / "torch"))
+    backend_env.setdefault("HF_HUB_OFFLINE", "1")
+    backend_env.setdefault("TRANSFORMERS_OFFLINE", "1")
 
     node_bin = select_node_bin(config)
     npm_bin = select_npm_bin(config, node_bin)
@@ -359,7 +374,7 @@ def main() -> int:
     frontend_env["PATH"] = f"{node_path_prefix}{os.pathsep}{frontend_env.get('PATH', '')}"
     frontend_env.update(
         {
-            "CDSW_APP_POLLING_ENDPOINT": os.getenv("CDSW_APP_POLLING_ENDPOINT", "/health"),
+            "CDSW_APP_POLLING_ENDPOINT": os.getenv("CDSW_APP_POLLING_ENDPOINT", "/healthz"),
             "VITE_API_BASE": "/api/v1",
             "VITE_API_PROXY_TARGET": backend_url,
             "VITE_HOST": frontend_host,
@@ -460,10 +475,14 @@ def main() -> int:
 
         if not wait_for_tcp(backend_host, backend_port, 60):
             raise RuntimeError(f"FastAPI did not become available. Check {backend_log_path}.")
-        if not wait_for_url(f"{backend_url}/health", 15):
-            raise RuntimeError(f"FastAPI health check failed. Check {backend_log_path}.")
-        if not wait_for_url(frontend_url, 60):
+        if not wait_for_tcp(frontend_host, frontend_port, 60):
             raise RuntimeError(f"Vite did not become available. Check {frontend_log_path}.")
+        if not wait_for_url(f"{frontend_url}/healthz", 15):
+            print(
+                f"Warning: frontend port is open, but /healthz did not return before timeout. "
+                f"Continuing so Cloudera can poll the running service. Check {frontend_log_path}.",
+                flush=True,
+            )
 
         print(f"{APP_NAME} is running.", flush=True)
         print(f"Frontend: {frontend_url}", flush=True)

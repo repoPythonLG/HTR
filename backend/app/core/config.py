@@ -21,7 +21,19 @@ class Settings(BaseModel):
     api_prefix: str = "/api/v1"
     database_url: str = "sqlite:///./claims.db"
     storage_root: Path = Path("./data/uploads")
-    model_version: str = "local-rules-1.0"
+    model_version: str = "local-rules-daily-cost-no-vendor-3.0"
+    offline_model_root: Path = Path(os.getenv("OFFLINE_MODEL_ROOT", "./data/models"))
+    docling_artifacts_path: Optional[Path] = (
+        Path(os.getenv("DOCLING_ARTIFACTS_PATH"))
+        if os.getenv("DOCLING_ARTIFACTS_PATH")
+        else None
+    )
+    easyocr_model_dir: Optional[Path] = (
+        Path(os.getenv("EASYOCR_MODEL_DIR"))
+        if os.getenv("EASYOCR_MODEL_DIR")
+        else None
+    )
+    extraction_download_enabled: bool = os.getenv("EXTRACTION_DOWNLOAD_ENABLED", "false").lower() in {"1", "true", "yes"}
     llmhub_url: Optional[str] = None
     llmhub_api_key: Optional[str] = None
     chat_vllm_base_url: Optional[str] = (

@@ -158,8 +158,9 @@ def test_upload_analyze_and_review_flow(client, auth_headers):
     detection_types = {item["detection_type"] for item in claim["detections"]}
 
     assert "hotel_above_benchmark" in detection_types
-    assert "near_approval_threshold" in detection_types
-    assert "extended_stay" in detection_types
+    assert "near_approval_threshold" not in detection_types
+    assert "extended_stay" not in detection_types
+    assert "trip_duration_outlier_abnormality" not in detection_types
     assert "meal_double_claim" in detection_types
     assert claim["suspicious_flag"] is True
 
@@ -283,7 +284,7 @@ def test_sabic_register_import_and_mean_threshold_mode(client, auth_headers):
 13882,Riyadh Region,Saudi Arabia,Riyadh,Western Region,Saudi Arabia,Jeddah,Business Trip,2025-02-16,2025-02-16,Domestic,2025-03-11,Bus. Housing Claim,149646,1,510.00
 13883,Riyadh Region,Saudi Arabia,Riyadh,Eastern Region,Saudi Arabia,Khobar,Business Trip,2025-02-19,2025-02-20,Domestic,2025-03-11,Bus. Housing Claim,149646,2,495.00
 13963,Riyadh Region,Saudi Arabia,Riyadh,Eastern Region,Saudi Arabia,Jubail,Business Trip,2025-05-19,2025-05-21,Domestic,2025-06-05,Bus. Housing Claim,253290,3,505.00
-14023,Riyadh Region,Saudi Arabia,Riyadh,London,United Kingdom,London,Business Trip,2025-08-04,2025-08-08,Domestic,2025-08-23,Bus. Housing Claim,149646,5,900.00
+14023,Riyadh Region,Saudi Arabia,Riyadh,London,United Kingdom,London,Business Trip,2025-08-04,2025-08-08,Domestic,2025-08-23,Bus. Housing Claim,149646,5,2500.00
 """
 
     import_response = client.post(
@@ -303,6 +304,50 @@ def test_sabic_register_import_and_mean_threshold_mode(client, auth_headers):
     findings = analysis_response.json()["findings"]
     detection_types = {item["detection_type"] for item in findings}
     assert "amount_above_peer_mean_threshold" in detection_types
+
+
+def test_long_trip_uses_daily_cost_not_total_amount(client, auth_headers):
+    admin_headers = auth_headers["administrator"]
+    reviewer_headers = auth_headers["reviewer"]
+
+    settings_response = client.put(
+        "/api/v1/admin/risk-settings",
+        headers=admin_headers,
+        json={
+            "detection_mode": "combined",
+            "mean_threshold_pct": 10,
+            "outlier_min_sample_size": 5,
+            "location_adjusted_threshold_pct": 10,
+        },
+    )
+    assert settings_response.status_code == 200, settings_response.text
+
+    csv_content = """TRIP NUMBER,From Region,From Country,From City,To Region,To Country,To City,Trip Activity,Trip Start Date,Trip End Date,Trip Boundary,Trip Settlement Date,Expense Type,Masked ID,Trip Duration,Expense Amount in SAR
+20001,Riyadh Region,Saudi Arabia,Riyadh,Eastern Region,Saudi Arabia,Jubail,Business Trip,2025-02-01,2025-02-02,Domestic,2025-02-15,Bus. Housing Claim,12024,2,1000.00
+20002,Riyadh Region,Saudi Arabia,Riyadh,Eastern Region,Saudi Arabia,Jubail,Business Trip,2025-02-03,2025-02-04,Domestic,2025-02-16,Bus. Housing Claim,12024,2,1020.00
+20003,Riyadh Region,Saudi Arabia,Riyadh,Eastern Region,Saudi Arabia,Jubail,Business Trip,2025-02-05,2025-02-06,Domestic,2025-02-17,Bus. Housing Claim,12024,2,980.00
+20004,Riyadh Region,Saudi Arabia,Riyadh,Eastern Region,Saudi Arabia,Jubail,Business Trip,2025-02-07,2025-02-08,Domestic,2025-02-18,Bus. Housing Claim,12024,2,1010.00
+20005,Riyadh Region,Saudi Arabia,Riyadh,Eastern Region,Saudi Arabia,Jubail,Business Trip,2025-02-09,2025-02-10,Domestic,2025-02-19,Bus. Housing Claim,12024,2,990.00
+20006,Riyadh Region,Saudi Arabia,Riyadh,Eastern Region,Saudi Arabia,Jubail,Business Trip,2025-03-01,2025-03-20,Domestic,2025-03-30,Bus. Housing Claim,12024,20,9000.00
+"""
+
+    import_response = client.post(
+        "/api/v1/claims/import-excel",
+        headers=reviewer_headers,
+        files={"file": ("long_trip_daily_cost.csv", io.BytesIO(csv_content.encode("utf-8")), "text/csv")},
+        data={"auto_analyze": "true"},
+    )
+    assert import_response.status_code == 200, import_response.text
+
+    long_trip_claim_id = import_response.json()["claim_ids"][-1]
+    analysis_response = client.get(f"/api/v1/claims/{long_trip_claim_id}/analysis", headers=reviewer_headers)
+    assert analysis_response.status_code == 200, analysis_response.text
+    detection_types = {item["detection_type"] for item in analysis_response.json()["findings"]}
+
+    assert "extended_stay" not in detection_types
+    assert "trip_duration_outlier_abnormality" not in detection_types
+    assert "amount_above_peer_mean_threshold" not in detection_types
+    assert "amount_outlier_abnormality" not in detection_types
 
 
 def test_employee_risk_dashboard(client, auth_headers):

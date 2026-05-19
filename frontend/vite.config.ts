@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 
 declare const process: {
@@ -13,8 +13,26 @@ const allowedHosts = (process.env.VITE_ALLOWED_HOSTS || '')
   .map((host) => host.trim())
   .filter(Boolean)
 
+function clouderaHealthPlugin(): Plugin {
+  return {
+    name: 'cloudera-healthz',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const path = (req as { url?: string }).url?.split('?', 1)[0]
+        if (path !== '/healthz') {
+          next()
+          return
+        }
+        res.statusCode = 200
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify({ status: 'ok', service: 'travel-expenses-guard' }))
+      })
+    }
+  }
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [clouderaHealthPlugin(), react()],
   server: {
     port: configuredPort,
     host: configuredHost,

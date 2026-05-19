@@ -198,6 +198,14 @@ type ChatDebugState = {
   request?: ClaimChatDebugResponse
   response?: string
   question?: string
+  history?: ClaimChatMessage[]
+  debugError?: string
+}
+
+type DocumentUploadProgress = {
+  percent: number
+  stage: 'uploading' | 'processing' | 'complete'
+  detail: string
 }
 
 const chatExampleQuestions = [
@@ -207,11 +215,11 @@ const chatExampleQuestions = [
   },
   {
     title: 'What is wrong?',
-    question: 'What exactly is wrong or unusual about this travel expense entry? Focus on overlapping trips, amount anomalies, location cost issues, dates, vendor patterns, and any contradictions.'
+    question: 'What exactly is wrong or unusual about this travel expense entry? Focus on overlapping trips, daily-cost anomalies, location cost issues, dates, and any contradictions.'
   },
   {
     title: 'Evidence coverage',
-    question: 'Does the supporting evidence fully cover this travel expense entry? Compare the attached receipt documents against the table entry amount, trip dates, destination, vendor, and employee.'
+    question: 'Does the supporting evidence fully cover this travel expense entry? Compare the attached receipt documents against the table entry amount, daily cost, trip dates, destination, and employee.'
   },
   {
     title: 'Document concerns',
@@ -428,21 +436,13 @@ function evidenceNarrative(detectionType: string) {
     case 'overlapping_trips':
       return 'This employee has another trip record with overlapping dates. The related entry is shown below so the reviewer can compare both cases.'
     case 'amount_outlier_abnormality':
-      return 'The amount sits outside the normal distribution for comparable travel expense entries. The visual shows the peer benchmark and where this entry lands.'
+      return 'The daily cost sits outside the normal distribution for comparable travel expense entries. The visual shows the peer daily benchmark and where this entry lands.'
     case 'amount_above_peer_mean_threshold':
-      return 'The amount exceeds the configured peer-mean threshold. The visual compares peer mean, approval limit, and this entry.'
+      return 'The daily cost exceeds the configured peer-mean threshold. The visual compares peer daily mean, daily limit, and this entry.'
     case 'location_cost_anomaly':
-      return 'The amount remains high even after adjusting for country/city cost level, which means the destination alone does not explain the variance.'
+      return 'The daily cost remains high even after adjusting for country/city cost level, which means the destination alone does not explain the variance.'
     case 'hotel_above_benchmark':
       return 'The observed room rate is above the allowed benchmark for the destination city.'
-    case 'near_approval_threshold':
-      return 'The entry total is close to the approval threshold, which can indicate threshold management.'
-    case 'extended_stay':
-      return 'The trip duration is longer than the expected business-travel window plus policy buffer.'
-    case 'trip_duration_outlier_abnormality':
-      return 'The trip duration is unusual compared with similar travel expense entries.'
-    case 'vendor_concentration':
-      return "A high proportion of this employee's travel expense entries are associated with the same vendor."
     default:
       return 'The rule engine identified a pattern that requires reviewer attention. The key facts below explain the trigger.'
   }
@@ -466,51 +466,51 @@ function evidenceScalePoints(evidence: AnalysisEvidence): { title: string; suffi
   const type = evidence.detection_type
 
   if (type === 'amount_outlier_abnormality') {
-    const claim = numericFact(facts, ['claim_amount'])
-    const mean = numericFact(facts, ['peer_mean'])
-    const limit = numericFact(facts, ['iqr_upper_bound'])
-    const median = numericFact(facts, ['peer_median'])
+    const claim = numericFact(facts, ['claim_daily_amount', 'claim_amount'])
+    const mean = numericFact(facts, ['peer_mean_daily_amount', 'peer_mean'])
+    const limit = numericFact(facts, ['daily_iqr_upper_bound', 'iqr_upper_bound'])
+    const median = numericFact(facts, ['peer_median_daily_amount', 'peer_median'])
     if (claim === undefined || (mean === undefined && limit === undefined && median === undefined)) return null
     return {
-      title: 'Peer amount distribution',
-      suffix: ' SAR',
+      title: 'Peer daily cost distribution',
+      suffix: ' SAR/day',
       points: [
-        ...(median !== undefined ? [{ label: 'Peer median', value: median, tone: 'benchmark' as const }] : []),
-        ...(mean !== undefined ? [{ label: 'Peer mean', value: mean, tone: 'benchmark' as const }] : []),
-        ...(limit !== undefined ? [{ label: 'Outlier limit', value: limit, tone: 'limit' as const }] : []),
-        { label: 'This entry', value: claim, tone: 'claim' }
+        ...(median !== undefined ? [{ label: 'Peer daily median', value: median, tone: 'benchmark' as const }] : []),
+        ...(mean !== undefined ? [{ label: 'Peer daily mean', value: mean, tone: 'benchmark' as const }] : []),
+        ...(limit !== undefined ? [{ label: 'Daily outlier limit', value: limit, tone: 'limit' as const }] : []),
+        { label: 'This entry per day', value: claim, tone: 'claim' }
       ]
     }
   }
 
   if (type === 'amount_above_peer_mean_threshold') {
-    const claim = numericFact(facts, ['claim_amount'])
-    const mean = numericFact(facts, ['peer_mean'])
-    const threshold = numericFact(facts, ['threshold_amount'])
+    const claim = numericFact(facts, ['claim_daily_amount', 'claim_amount'])
+    const mean = numericFact(facts, ['peer_mean_daily_amount', 'peer_mean'])
+    const threshold = numericFact(facts, ['daily_threshold_amount', 'threshold_amount'])
     if (claim === undefined || mean === undefined || threshold === undefined) return null
     return {
-      title: 'Peer mean threshold',
-      suffix: ' SAR',
+      title: 'Peer daily mean threshold',
+      suffix: ' SAR/day',
       points: [
-        { label: 'Peer mean', value: mean, tone: 'benchmark' },
-        { label: 'Configured limit', value: threshold, tone: 'limit' },
-        { label: 'This entry', value: claim, tone: 'claim' }
+        { label: 'Peer daily mean', value: mean, tone: 'benchmark' },
+        { label: 'Configured daily limit', value: threshold, tone: 'limit' },
+        { label: 'This entry per day', value: claim, tone: 'claim' }
       ]
     }
   }
 
   if (type === 'location_cost_anomaly') {
-    const claim = numericFact(facts, ['location_adjusted_claim_amount'])
-    const mean = numericFact(facts, ['peer_mean_location_adjusted_amount'])
-    const threshold = numericFact(facts, ['location_adjusted_threshold_amount'])
+    const claim = numericFact(facts, ['location_adjusted_daily_amount', 'location_adjusted_claim_amount'])
+    const mean = numericFact(facts, ['peer_mean_location_adjusted_daily_amount', 'peer_mean_location_adjusted_amount'])
+    const threshold = numericFact(facts, ['location_adjusted_daily_threshold_amount', 'location_adjusted_threshold_amount'])
     if (claim === undefined || mean === undefined || threshold === undefined) return null
     return {
-      title: 'Location-adjusted amount',
-      suffix: ' SAR',
+      title: 'Location-adjusted daily cost',
+      suffix: ' SAR/day',
       points: [
-        { label: 'Adjusted peer mean', value: mean, tone: 'benchmark' },
-        { label: 'Adjusted limit', value: threshold, tone: 'limit' },
-        { label: 'This entry adjusted', value: claim, tone: 'claim' }
+        { label: 'Adjusted peer daily mean', value: mean, tone: 'benchmark' },
+        { label: 'Adjusted daily limit', value: threshold, tone: 'limit' },
+        { label: 'This entry adjusted per day', value: claim, tone: 'claim' }
       ]
     }
   }
@@ -527,52 +527,6 @@ function evidenceScalePoints(evidence: AnalysisEvidence): { title: string; suffi
         { label: 'City benchmark', value: benchmark, tone: 'benchmark' },
         { label: 'Allowed limit', value: limit, tone: 'limit' },
         { label: 'Observed rate', value: observed, tone: 'claim' }
-      ]
-    }
-  }
-
-  if (type === 'near_approval_threshold') {
-    const total = numericFact(facts, ['claim_total'])
-    const floor = numericFact(facts, ['near_threshold_floor'])
-    const threshold = numericFact(facts, ['approval_threshold'])
-    if (total === undefined || floor === undefined || threshold === undefined) return null
-    return {
-      title: 'Approval threshold proximity',
-      suffix: ' SAR',
-      points: [
-        { label: 'Review band starts', value: floor, tone: 'benchmark' },
-        { label: 'Approval threshold', value: threshold, tone: 'limit' },
-        { label: 'This entry', value: total, tone: 'claim' }
-      ]
-    }
-  }
-
-  if (type === 'extended_stay') {
-    const stay = numericFact(facts, ['stay_days'])
-    const allowed = numericFact(facts, ['allowed_days'])
-    if (stay === undefined || allowed === undefined) return null
-    return {
-      title: 'Trip duration policy window',
-      suffix: ' days',
-      points: [
-        { label: 'Allowed duration', value: allowed, tone: 'limit' },
-        { label: 'This trip', value: stay, tone: 'claim' }
-      ]
-    }
-  }
-
-  if (type === 'trip_duration_outlier_abnormality') {
-    const duration = numericFact(facts, ['trip_duration_days'])
-    const medianDuration = numericFact(facts, ['peer_median_duration'])
-    const upper = numericFact(facts, ['peer_duration_iqr_upper'])
-    if (duration === undefined || (medianDuration === undefined && upper === undefined)) return null
-    return {
-      title: 'Peer trip duration distribution',
-      suffix: ' days',
-      points: [
-        ...(medianDuration !== undefined ? [{ label: 'Peer median', value: medianDuration, tone: 'benchmark' as const }] : []),
-        ...(upper !== undefined ? [{ label: 'Outlier limit', value: upper, tone: 'limit' as const }] : []),
-        { label: 'This trip', value: duration, tone: 'claim' }
       ]
     }
   }
@@ -737,6 +691,7 @@ export function ClaimAnalysisPage() {
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null)
   const [documentUploadFiles, setDocumentUploadFiles] = useState<File[]>([])
   const [documentUploading, setDocumentUploading] = useState(false)
+  const [documentUploadProgress, setDocumentUploadProgress] = useState<DocumentUploadProgress | null>(null)
   const [documentMessage, setDocumentMessage] = useState<string>()
   const [documentError, setDocumentError] = useState<string>()
   const [focusedDocument, setFocusedDocument] = useState<DocumentRecord | null>(null)
@@ -753,6 +708,7 @@ export function ClaimAnalysisPage() {
   const [chatError, setChatError] = useState<string>()
   const [chatDebug, setChatDebug] = useState<ChatDebugState | null>(null)
   const [chatDebugOpen, setChatDebugOpen] = useState(false)
+  const [chatDebugLoading, setChatDebugLoading] = useState(false)
   const documentInputRef = useRef<HTMLInputElement | null>(null)
   const chatAbortRef = useRef<AbortController | null>(null)
   const chatMessagesRef = useRef<HTMLDivElement | null>(null)
@@ -828,6 +784,7 @@ export function ClaimAnalysisPage() {
     setChatError(undefined)
     setChatDebug(null)
     setChatDebugOpen(false)
+    setChatDebugLoading(false)
     chatShouldStickToBottomRef.current = true
   }, [activeReceiptId])
 
@@ -866,14 +823,10 @@ export function ClaimAnalysisPage() {
     setChatMessages(nextMessages)
     setChatInput('')
     setChatError(undefined)
-    setChatDebug({ question: message, response: '' })
+    setChatDebug({ question: message, response: '', history })
     setChatLoading(true)
 
     try {
-      fetchClaimChatDebug(activeReceiptId, message, history)
-        .then((debug) => setChatDebug((current) => ({ ...(current || {}), request: debug, question: message })))
-        .catch((err) => setChatDebug((current) => ({ ...(current || {}), response: `Debug context failed: ${String(err)}`, question: message })))
-
       await streamClaimChatMessage(
         activeReceiptId,
         message,
@@ -924,8 +877,24 @@ export function ClaimAnalysisPage() {
     setChatError(undefined)
     setChatDebug(null)
     setChatDebugOpen(false)
+    setChatDebugLoading(false)
     setChatLoading(false)
     chatShouldStickToBottomRef.current = true
+  }
+
+  async function openChatDebug() {
+    setChatDebugOpen(true)
+    if (!activeReceiptId || !chatDebug?.question || chatDebug.request || chatDebugLoading) return
+
+    setChatDebugLoading(true)
+    try {
+      const debug = await fetchClaimChatDebug(activeReceiptId, chatDebug.question, chatDebug.history || [])
+      setChatDebug((current) => ({ ...(current || {}), request: debug, debugError: undefined }))
+    } catch (err) {
+      setChatDebug((current) => ({ ...(current || {}), debugError: String(err) }))
+    } finally {
+      setChatDebugLoading(false)
+    }
   }
 
   function handleChatKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
@@ -1032,19 +1001,45 @@ export function ClaimAnalysisPage() {
     if (!activeReceiptId || !documentUploadFiles.length) return
 
     setDocumentUploading(true)
+    setDocumentUploadProgress({
+      percent: 2,
+      stage: 'uploading',
+      detail: `Preparing ${documentUploadFiles.length} invoice file${documentUploadFiles.length === 1 ? '' : 's'} for upload.`
+    })
     setDocumentMessage(undefined)
     setDocumentError(undefined)
     try {
-      const uploaded = await uploadClaimDocuments(activeReceiptId, documentUploadFiles)
+      const uploaded = await uploadClaimDocuments(activeReceiptId, documentUploadFiles, (percent) => {
+        setDocumentUploadProgress({
+          percent,
+          stage: percent >= 92 ? 'processing' : 'uploading',
+          detail: percent >= 92
+            ? 'Invoice uploaded. Extracting text, fields, and storing evidence in the case file...'
+            : 'Uploading invoice evidence to the secure case file...'
+        })
+      })
+      setDocumentUploadProgress({
+        percent: 100,
+        stage: 'complete',
+        detail: 'Invoice evidence uploaded, extracted, and stored successfully.'
+      })
       await refreshWorkspace(uploaded[0]?.document_id ?? null)
       setDocumentUploadFiles([])
       if (documentInputRef.current) documentInputRef.current.value = ''
-      setDocumentMessage(`${uploaded.length} receipt evidence file${uploaded.length === 1 ? '' : 's'} uploaded and stored in the case file.`)
+      setDocumentMessage(`${uploaded.length} invoice evidence file${uploaded.length === 1 ? '' : 's'} uploaded, extracted, and stored in the case file.`)
     } catch (err) {
+      setDocumentUploadProgress(null)
       setDocumentError(String(err))
     } finally {
       setDocumentUploading(false)
     }
+  }
+
+  function handleDocumentFileSelection(files: FileList | null) {
+    setDocumentUploadFiles(Array.from(files || []))
+    setDocumentUploadProgress(null)
+    setDocumentMessage(undefined)
+    setDocumentError(undefined)
   }
 
   async function handleDocumentDelete(document: DocumentRecord) {
@@ -1255,7 +1250,7 @@ export function ClaimAnalysisPage() {
                         className="file-input-hidden"
                         type="file"
                         multiple
-                        onChange={(event) => setDocumentUploadFiles(Array.from(event.target.files || []))}
+                        onChange={(event) => handleDocumentFileSelection(event.target.files)}
                       />
                       <label className={`upload-dropzone ${documentUploadFiles.length ? 'has-file' : ''}`} htmlFor="case-receipt-document-upload">
                         <span className="upload-dropzone-icon"><DocumentIcon size={22} /></span>
@@ -1266,10 +1261,29 @@ export function ClaimAnalysisPage() {
                         <span className="upload-dropzone-action">{documentUploadFiles.length ? 'Change files' : 'Browse files'}</span>
                       </label>
 
+                      {documentUploadProgress && (
+                        <div className="invoice-upload-progress-card" role="status" aria-live="polite">
+                          <div className="import-progress-head">
+                            <span>
+                              {documentUploadProgress.stage === 'processing'
+                                ? 'Processing invoice'
+                                : documentUploadProgress.stage === 'complete'
+                                  ? 'Upload complete'
+                                  : 'Uploading invoice'}
+                            </span>
+                            <strong>{documentUploadProgress.percent}%</strong>
+                          </div>
+                          <div className="progress-track">
+                            <span className="progress-fill" style={{ width: `${documentUploadProgress.percent}%` }} />
+                          </div>
+                          <p>{documentUploadProgress.detail}</p>
+                        </div>
+                      )}
+
                       {documentMessage && <div className="success-box">{documentMessage}</div>}
                       {documentError && <div className="error-box">{documentError}</div>}
                       <button type="submit" disabled={!documentUploadFiles.length || documentUploading}>
-                        <span className="btn-inline"><UploadIcon size={14} />{documentUploading ? 'Uploading receipts...' : 'Upload Receipts'}</span>
+                        <span className="btn-inline"><UploadIcon size={14} />{documentUploading ? 'Uploading invoices...' : 'Upload Invoices'}</span>
                       </button>
                     </form>
                   </section>
@@ -1366,7 +1380,7 @@ export function ClaimAnalysisPage() {
                         <button
                           type="button"
                           className="chat-debug-btn"
-                          onClick={() => setChatDebugOpen(true)}
+                          onClick={openChatDebug}
                           disabled={!chatDebug}
                           title="Show prompt, context, and last response"
                           aria-label="Show chat debug payload"
@@ -1697,13 +1711,19 @@ export function ClaimAnalysisPage() {
                   </section>
                   <section>
                     <h4>LLM Settings</h4>
-                    <pre>{JSON.stringify({
-                      model: chatDebug.request?.model,
-                      base_url: chatDebug.request?.base_url,
-                      settings_ready: chatDebug.request?.settings_ready,
-                      context_sources: chatDebug.request?.context_sources,
-                      extraction_status: chatDebug.request?.extraction_status
-                    }, null, 2)}</pre>
+                    {chatDebugLoading && !chatDebug.request ? (
+                      <p className="muted-text">Loading debug context from the backend...</p>
+                    ) : chatDebug.debugError ? (
+                      <pre>{chatDebug.debugError}</pre>
+                    ) : (
+                      <pre>{JSON.stringify({
+                        model: chatDebug.request?.model,
+                        base_url: chatDebug.request?.base_url,
+                        settings_ready: chatDebug.request?.settings_ready,
+                        context_sources: chatDebug.request?.context_sources,
+                        extraction_status: chatDebug.request?.extraction_status
+                      }, null, 2)}</pre>
+                    )}
                   </section>
                   <section>
                     <h4>Messages Sent to LLM</h4>

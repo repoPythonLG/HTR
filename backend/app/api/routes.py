@@ -86,6 +86,38 @@ def _enforce_employee_claim_scope(current_user: User, claim: Claim) -> None:
         raise HTTPException(status_code=403, detail="You can only access your own travel expense entries")
 
 
+def _employee_scope_filter(current_user: User):
+    if current_user.role != "employee":
+        return None
+    employee_filters = [Claim.submitted_by_user_id == current_user.user_id]
+    if current_user.employee_code:
+        employee_filters.append(Claim.employee_id == current_user.employee_code)
+    return or_(*employee_filters)
+
+
+def _ensure_active_entries_scored(db: Session, current_user: User) -> None:
+    scope_filter = _employee_scope_filter(current_user)
+    stmt = (
+        select(Claim.claim_id)
+        .outerjoin(
+            RiskAssessment,
+            (RiskAssessment.claim_id == Claim.claim_id) & (RiskAssessment.model_version == settings.model_version),
+        )
+        .where(Claim.status.in_(ACTIVE_CLAIM_STATUSES), RiskAssessment.risk_id.is_(None))
+        .order_by(Claim.created_at.asc())
+        .limit(5000)
+    )
+    if scope_filter is not None:
+        stmt = stmt.where(scope_filter)
+
+    claim_ids = list(db.execute(stmt).scalars().all())
+    for claim_id in claim_ids:
+        try:
+            analyze_claim(db, claim_id)
+        except Exception:
+            db.rollback()
+
+
 def _sample_file_path() -> Path:
     return Path(__file__).resolve().parents[2] / "data" / "templates" / "sabic_hotel_receipts_example_1000.xlsx"
 
@@ -93,6 +125,13 @@ def _sample_file_path() -> Path:
 def _display_label(value: Optional[str]) -> str:
     if not value:
         return "Not recorded"
+    labels = {
+        "amount_outlier_abnormality": "Daily Cost Outlier",
+        "amount_above_peer_mean_threshold": "Daily Cost Above Peer Mean",
+        "location_cost_anomaly": "Location-Adjusted Daily Cost Anomaly",
+    }
+    if value in labels:
+        return labels[value]
     return value.replace("_", " ").replace("-", " ").title()
 
 
@@ -182,14 +221,21 @@ def _build_summary_rows(db: Session, claims: List[Claim]) -> List[ClaimSummaryOu
         return []
 
     claim_ids = [claim.claim_id for claim in claims]
-    risk_rows = db.execute(select(RiskAssessment).where(RiskAssessment.claim_id.in_(claim_ids))).scalars().all()
+    risk_rows = db.execute(
+        select(RiskAssessment).where(
+            RiskAssessment.claim_id.in_(claim_ids),
+            RiskAssessment.model_version == settings.model_version,
+        )
+    ).scalars().all()
     risk_map = {item.claim_id: item for item in risk_rows}
 
     detection_counts = {
         row[0]: row[1]
         for row in db.execute(
             select(Detection.claim_id, func.count())
+            .join(RiskAssessment, RiskAssessment.claim_id == Detection.claim_id)
             .where(Detection.claim_id.in_(claim_ids))
+            .where(RiskAssessment.model_version == settings.model_version)
             .group_by(Detection.claim_id)
         ).all()
     }
@@ -220,8 +266,8 @@ def _build_summary_rows(db: Session, claims: List[Claim]) -> List[ClaimSummaryOu
                 status=claim.status,
                 created_at=claim.created_at,
                 source_type=claim.source_type,
-                suspicious_flag=claim.suspicious_flag,
-                incorrect_flag=claim.incorrect_flag,
+                suspicious_flag=claim.suspicious_flag if risk else False,
+                incorrect_flag=claim.incorrect_flag if risk else False,
                 case_owner_id=claim.case_owner_id,
                 case_priority=claim.case_priority or "standard",
                 case_sla_due_at=claim.case_sla_due_at,
@@ -230,7 +276,7 @@ def _build_summary_rows(db: Session, claims: List[Claim]) -> List[ClaimSummaryOu
                 case_watchlist=bool(claim.case_watchlist),
                 case_next_action=claim.case_next_action,
                 risk_level=risk.risk_level if risk else None,
-                risk_score=risk.risk_score if risk else claim.risk_score_cached,
+                risk_score=risk.risk_score if risk else 0.0,
                 primary_red_flag=risk.primary_red_flag if risk else None,
                 detection_count=int(detection_counts.get(claim.claim_id, 0)),
             )
@@ -631,6 +677,9 @@ def list_claims(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("employee", "reviewer", "administrator")),
 ):
+    if (queue or "all").strip().lower() in {"all", "active"}:
+        _ensure_active_entries_scored(db, current_user)
+
     queue_text = (queue or "all").strip().lower()
     if queue_text not in {"all", "active", "history"}:
         raise HTTPException(status_code=400, detail="Unsupported queue filter. Use all, active, or history.")
@@ -640,7 +689,10 @@ def list_claims(
     if sort_text not in supported_sorts:
         raise HTTPException(status_code=400, detail="Unsupported sort. Use risk_desc, risk_asc, created_desc, created_asc, amount_desc, or amount_asc.")
 
-    stmt = select(Claim).outerjoin(RiskAssessment)
+    stmt = select(Claim).outerjoin(
+        RiskAssessment,
+        (RiskAssessment.claim_id == Claim.claim_id) & (RiskAssessment.model_version == settings.model_version),
+    )
     if queue_text == "active":
         stmt = stmt.where(Claim.status.in_(ACTIVE_CLAIM_STATUSES))
     elif queue_text == "history":
@@ -675,11 +727,9 @@ def list_claims(
             )
         )
 
-    if current_user.role == "employee":
-        employee_filters = [Claim.submitted_by_user_id == current_user.user_id]
-        if current_user.employee_code:
-            employee_filters.append(Claim.employee_id == current_user.employee_code)
-        stmt = stmt.where(or_(*employee_filters))
+    scope_filter = _employee_scope_filter(current_user)
+    if scope_filter is not None:
+        stmt = stmt.where(scope_filter)
 
     total = int(db.execute(select(func.count()).select_from(stmt.subquery())).scalar() or 0)
 
@@ -1016,8 +1066,23 @@ def claim_analysis_view(
         raise HTTPException(status_code=404, detail="Travel expense entry not found")
     _enforce_employee_claim_scope(current_user, claim)
 
-    if not claim.risk_assessment:
-        raise HTTPException(status_code=409, detail="Travel expense entry has not been analyzed yet")
+    if not claim.risk_assessment or claim.risk_assessment.model_version != settings.model_version:
+        try:
+            analyze_claim(db, claim_id)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Travel expense entry not found")
+        claim = (
+            db.execute(
+                select(Claim)
+                .options(joinedload(Claim.detections), joinedload(Claim.risk_assessment))
+                .where(Claim.claim_id == claim_id)
+            )
+            .unique()
+            .scalars()
+            .first()
+        )
+        if not claim or not claim.risk_assessment:
+            raise HTTPException(status_code=409, detail="Travel expense entry has not been analyzed yet")
 
     findings = [
         {
@@ -1381,23 +1446,42 @@ def executive_dashboard(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("reviewer", "administrator")),
 ):
+    _ensure_active_entries_scored(db, current_user)
+
     total_claims = db.execute(
         select(func.count()).select_from(Claim).where(Claim.status.in_(ACTIVE_CLAIM_STATUSES))
     ).scalar_one()
     analyzed_claims = db.execute(
-        select(func.count()).select_from(Claim).where(Claim.status.in_(["analyzed", "under_review"]))
+        select(func.count())
+        .select_from(Claim)
+        .join(RiskAssessment, RiskAssessment.claim_id == Claim.claim_id)
+        .where(Claim.status.in_(ACTIVE_CLAIM_STATUSES), RiskAssessment.model_version == settings.model_version)
     ).scalar_one()
     suspicious_claims = db.execute(
-        select(func.count()).select_from(Claim).where(Claim.status.in_(ACTIVE_CLAIM_STATUSES), Claim.suspicious_flag.is_(True))
+        select(func.count())
+        .select_from(Claim)
+        .join(RiskAssessment, RiskAssessment.claim_id == Claim.claim_id)
+        .where(
+            Claim.status.in_(ACTIVE_CLAIM_STATUSES),
+            Claim.suspicious_flag.is_(True),
+            RiskAssessment.model_version == settings.model_version,
+        )
     ).scalar_one()
     wrong_claims = db.execute(
-        select(func.count()).select_from(Claim).where(Claim.status.in_(ACTIVE_CLAIM_STATUSES), Claim.incorrect_flag.is_(True))
+        select(func.count())
+        .select_from(Claim)
+        .join(RiskAssessment, RiskAssessment.claim_id == Claim.claim_id)
+        .where(
+            Claim.status.in_(ACTIVE_CLAIM_STATUSES),
+            Claim.incorrect_flag.is_(True),
+            RiskAssessment.model_version == settings.model_version,
+        )
     ).scalar_one()
 
     risk_rows = db.execute(
         select(RiskAssessment.risk_level, func.count())
         .join(Claim, Claim.claim_id == RiskAssessment.claim_id)
-        .where(Claim.status.in_(ACTIVE_CLAIM_STATUSES))
+        .where(Claim.status.in_(ACTIVE_CLAIM_STATUSES), RiskAssessment.model_version == settings.model_version)
         .group_by(RiskAssessment.risk_level)
     ).all()
     by_risk_level = {row[0]: row[1] for row in risk_rows}
@@ -1412,7 +1496,8 @@ def executive_dashboard(
     detection_rows = db.execute(
         select(Detection.detection_type, func.count())
         .join(Claim, Claim.claim_id == Detection.claim_id)
-        .where(Claim.status.in_(ACTIVE_CLAIM_STATUSES))
+        .join(RiskAssessment, RiskAssessment.claim_id == Detection.claim_id)
+        .where(Claim.status.in_(ACTIVE_CLAIM_STATUSES), RiskAssessment.model_version == settings.model_version)
         .group_by(Detection.detection_type)
         .order_by(func.count().desc())
         .limit(10)
@@ -1501,6 +1586,8 @@ def _employee_risk_index(
 
 
 OUTLIER_METRIC_OPTIONS: Dict[str, str] = {
+    "claim_daily_amount": "Travel Expense Daily Cost (SAR/day)",
+    "location_adjusted_daily_amount": "Location-Adjusted Daily Cost (SAR/day)",
     "claim_total": "Travel Expense Amount (SAR)",
     "location_adjusted_claim_total": "Location-Adjusted Travel Expense Amount (SAR)",
     "trip_duration_days": "Trip Duration (Days)",
@@ -1536,6 +1623,18 @@ def _metric_value_for_claim(
     detection_count: int,
     location_cost_factor: float,
 ) -> Optional[float]:
+    duration_days = claim.trip_duration_days
+    if not duration_days and claim.start_date and claim.end_date:
+        duration_days = max(1, (claim.end_date - claim.start_date).days + 1)
+    safe_duration = max(int(duration_days or 1), 1)
+
+    if metric_key == "claim_daily_amount":
+        return float(claim.claim_total or 0.0) / safe_duration
+
+    if metric_key == "location_adjusted_daily_amount":
+        safe_factor = location_cost_factor if location_cost_factor > 0 else 1.0
+        return (float(claim.claim_total or 0.0) / safe_duration) / safe_factor
+
     if metric_key == "claim_total":
         return float(claim.claim_total or 0.0)
 
@@ -1628,8 +1727,8 @@ def _kmeans_2d(coords: List[tuple[float, float]], cluster_count: int, max_iterat
 
 @router.get("/dashboards/outlier-map", response_model=OutlierMapDashboardOut)
 def outlier_map_dashboard(
-    x_metric: str = "claim_total",
-    y_metric: str = "trip_duration_days",
+    x_metric: str = "claim_daily_amount",
+    y_metric: str = "location_adjusted_daily_amount",
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("reviewer", "administrator")),
 ):
@@ -2088,7 +2187,7 @@ def risk_summary_compat(
 def _method_status(mode: str, method_key: str) -> str:
     if mode == "combined":
         return "Active"
-    if mode == "outlier" and method_key in {"amount_outlier", "duration_outlier", "location_adjusted"}:
+    if mode == "outlier" and method_key in {"amount_outlier", "location_adjusted"}:
         return "Active"
     if mode == "mean_threshold" and method_key in {"mean_threshold", "location_adjusted"}:
         return "Active"
@@ -2122,16 +2221,16 @@ def model_governance(
     methods = [
         {
             "key": "amount_outlier",
-            "name": "Amount Outlier and Abnormality Detection",
+            "name": "Daily Cost Outlier and Abnormality Detection",
             "status": _method_status(risk_settings.detection_mode, "amount_outlier"),
-            "purpose": "Find travel expense entries whose value is statistically unusual compared with similar trips.",
+            "purpose": "Find travel expense entries whose per-day cost is statistically unusual compared with similar trips.",
             "how_it_works": (
                 "The engine compares each travel expense entry against peers with matching expense type, trip boundary, "
-                "and activity. It calculates mean, median, standard deviation, IQR upper bound, z-score, "
-                "and robust z-score before raising an abnormality finding."
+                "and activity. It divides the total by trip duration first, then calculates daily mean, median, "
+                "standard deviation, IQR upper bound, z-score, and robust z-score before raising an abnormality finding."
             ),
             "reviewer_interpretation": (
-                "A high score means the travel expense entry sits far outside the peer pattern. It is not an automatic rejection; "
+                "A high score means the daily cost sits far outside the peer pattern. It is not an automatic rejection; "
                 "the reviewer should validate itinerary, supporting evidence, and business justification."
             ),
             "limitations": [
@@ -2139,17 +2238,17 @@ def model_governance(
                 "Legitimate executive travel, late booking, or event pricing can create valid outliers.",
                 "Historical peer data must reflect current destination cost conditions.",
             ],
-            "primary_inputs": ["Travel expense entry amount", "Expense type", "Trip boundary", "Trip activity", "Peer sample"],
+            "primary_inputs": ["Travel expense entry amount", "Trip duration", "Daily cost", "Expense type", "Trip boundary", "Peer sample"],
             "thresholds": ["outlier_min_sample_size", "risk_critical_min"],
         },
         {
             "key": "mean_threshold",
-            "name": "Peer Mean Threshold Detection",
+            "name": "Peer Daily Mean Threshold Detection",
             "status": _method_status(risk_settings.detection_mode, "mean_threshold"),
-            "purpose": "Highlight travel expense entries that exceed the peer mean by a configured percentage.",
+            "purpose": "Highlight travel expense entries whose per-day cost exceeds the peer daily mean by a configured percentage.",
             "how_it_works": (
-                "The method calculates the peer mean and compares the travel expense amount against mean * "
-                "(1 + configured threshold percentage)."
+                "The method calculates daily cost for the entry and peer set, then compares the entry daily cost "
+                "against daily mean * (1 + configured threshold percentage)."
             ),
             "reviewer_interpretation": (
                 "This is a transparent business-rule signal. It is easier to explain to managers and works well "
@@ -2160,7 +2259,7 @@ def model_governance(
                 "The method does not understand one-off business context by itself.",
                 "A single percentage may be too blunt for every destination and trip type.",
             ],
-            "primary_inputs": ["Travel expense entry amount", "Peer mean", "Configured threshold", "Peer group"],
+            "primary_inputs": ["Travel expense entry amount", "Trip duration", "Entry daily cost", "Peer daily mean", "Configured threshold", "Peer group"],
             "thresholds": ["mean_threshold_pct", "location_adjusted_threshold_pct"],
         },
         {
@@ -2169,11 +2268,11 @@ def model_governance(
             "status": _method_status(risk_settings.detection_mode, "location_adjusted"),
             "purpose": "Normalise spend by country and city so expensive destinations are assessed fairly.",
             "how_it_works": (
-                "The engine applies city accommodation benchmarks or country cost factors to create a location-adjusted "
-                "travel expense amount before comparing behaviour across destinations."
+                "The engine first calculates daily cost, then applies city accommodation benchmarks or country cost factors "
+                "to create a location-adjusted daily amount before comparing behaviour across destinations."
             ),
             "reviewer_interpretation": (
-                "A location-adjusted anomaly means the travel expense entry is unusual even after allowing for the destination's "
+                "A location-adjusted anomaly means the daily cost is unusual even after allowing for the destination's "
                 "expected cost level."
             ),
             "limitations": [
@@ -2181,7 +2280,7 @@ def model_governance(
                 "Unknown cities fall back to country or trip-boundary defaults.",
                 "Major events and seasonal pricing may still need manual context.",
             ],
-            "primary_inputs": ["Destination city", "Destination country", "Trip boundary", "Travel expense entry amount"],
+            "primary_inputs": ["Destination city", "Destination country", "Trip boundary", "Travel expense entry amount", "Trip duration", "Daily cost"],
             "thresholds": ["location_adjusted_threshold_pct", "hotel_deviation_pct"],
         },
         {

@@ -32,7 +32,7 @@ export function LoginPage() {
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
     await loginUser(role)
-    navigate('/dashboard', { replace: true })
+    navigate(role === 'employee' ? '/employee' : '/receipts', { replace: true })
   }
 
   return (

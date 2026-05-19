@@ -29,7 +29,7 @@ const DEMO_ROLE_KEY = 'sabic_travel_expenses_demo_role'
 const DEMO_ROLES: UserRole[] = ['employee', 'reviewer', 'administrator']
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE ?? 'http://localhost:8000/api/v1'
+  baseURL: import.meta.env.VITE_API_BASE ?? import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
 })
 
 api.interceptors.request.use((config) => {
@@ -112,12 +112,16 @@ function withEmployeeRiskAliases(data: EmployeeRiskDashboard): EmployeeRiskDashb
 }
 
 function toApiMetric(metric?: string) {
+  if (metric === 'receipt_daily_amount') return 'claim_daily_amount'
+  if (metric === 'location_adjusted_daily_amount') return 'location_adjusted_daily_amount'
   if (metric === 'receipt_total') return 'claim_total'
   if (metric === 'location_adjusted_receipt_total') return 'location_adjusted_claim_total'
   return metric
 }
 
 function toUiMetric(metric?: string) {
+  if (metric === 'claim_daily_amount') return 'receipt_daily_amount'
+  if (metric === 'location_adjusted_daily_amount') return 'location_adjusted_daily_amount'
   if (metric === 'claim_total') return 'receipt_total'
   if (metric === 'location_adjusted_claim_total') return 'location_adjusted_receipt_total'
   return metric
@@ -537,12 +541,26 @@ export async function fetchDocumentBlob(claimId: string, documentId: string): Pr
   return response.data
 }
 
-export async function uploadClaimDocuments(claimId: string, files: File[]): Promise<DocumentRecord[]> {
+export async function uploadClaimDocuments(
+  claimId: string,
+  files: File[],
+  onProgress?: (percent: number) => void
+): Promise<DocumentRecord[]> {
   const form = new FormData()
   files.forEach((file) => form.append('files', file))
 
   const response = await api.post<DocumentRecord[]>(`/claims/${claimId}/documents`, form, {
-    headers: { 'Content-Type': 'multipart/form-data' }
+    headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: (event) => {
+      if (!onProgress) return
+      const total = event.total || files.reduce((sum, file) => sum + file.size, 0)
+      if (!total) {
+        onProgress(12)
+        return
+      }
+      // Leave headroom for server-side OCR/extraction after the file bytes arrive.
+      onProgress(Math.min(92, Math.round((event.loaded / total) * 92)))
+    }
   })
   return response.data
 }
