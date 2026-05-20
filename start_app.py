@@ -220,6 +220,33 @@ def backend_python() -> str:
     return str(venv_python) if venv_python.exists() else sys.executable
 
 
+def offline_models_ready(model_root: Path) -> bool:
+    required_files = [
+        model_root / "docling" / "ds4sd--docling-models" / "model_artifacts" / "layout" / "model.safetensors",
+        model_root / "docling" / "ds4sd--docling-models" / "model_artifacts" / "tableformer" / "accurate" / "tableformer_accurate.safetensors",
+        model_root / "docling" / "ds4sd--docling-models" / "model_artifacts" / "tableformer" / "fast" / "tableformer_fast.safetensors",
+        model_root / "docling" / "EasyOcr" / "craft_mlt_25k.pth",
+        model_root / "docling" / "EasyOcr" / "english_g2.pth",
+        model_root / "docling" / "EasyOcr" / "latin_g2.pth",
+    ]
+    return all(path.exists() for path in required_files)
+
+
+def ensure_offline_models(model_root: Path) -> None:
+    if offline_models_ready(model_root):
+        return
+
+    restore_script = ROOT / "scripts" / "restore_offline_models.py"
+    if not restore_script.exists():
+        raise RuntimeError(
+            "Offline extraction models are missing and the restore script is not present. "
+            "Expected scripts/restore_offline_models.py."
+        )
+
+    print("Offline extraction models are missing; restoring bundled Docling/EasyOCR archive...", flush=True)
+    subprocess.run([sys.executable, str(restore_script), "--target", str(model_root)], cwd=ROOT, check=True)
+
+
 def executable_version(command: list[str]) -> str:
     try:
         return subprocess.check_output(command, text=True, stderr=subprocess.STDOUT).strip()
@@ -353,6 +380,7 @@ def main() -> int:
     offline_model_root = ROOT / "backend" / "data" / "models"
     docling_artifacts_path = offline_model_root / "docling"
     easyocr_model_dir = docling_artifacts_path / "EasyOcr"
+    ensure_offline_models(offline_model_root)
 
     backend_env = os.environ.copy()
     backend_env["CORS_ORIGINS"] = json.dumps(origin_values(public_host, frontend_host, frontend_port))

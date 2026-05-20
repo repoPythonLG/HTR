@@ -1,0 +1,43 @@
+{
+  "archive": "travel_expenses_guard_offline_models.tar.gz",
+  "description": "Split Docling and EasyOCR extraction model archive for offline Travel Expenses Guard deployment.",
+  "target": "backend/data/models",
+  "part_size_limit": "under 100 MB per GitHub file limit",
+  "parts": [
+    {
+      "file": "travel_expenses_guard_offline_models.tar.gz.part-00",
+      "bytes": 99614720,
+      "sha256": "d88e0cdd3c0e8c472a705ae138e52395f9b57ba4d3a913c952c94f987ecb002b"
+    },
+    {
+      "file": "travel_expenses_guard_offline_models.tar.gz.part-01",
+      "bytes": 99614720,
+      "sha256": "48cc5b2bfbf9e757713433173c5b0502e88784ce70c0fa2abe90bd0815feab99"
+    },
+    {
+      "file": "travel_expenses_guard_offline_models.tar.gz.part-02",
+      "bytes": 99614720,
+      "sha256": "04f5a8dd09bdbb9ca9463ccf022b1cf5706655c05bc99e37c883513d4fa9250e"
+    },
+    {
+      "file": "travel_expenses_guard_offline_models.tar.gz.part-03",
+      "bytes": 99614720,
+      "sha256": "cd441f2a6e22b31c37a9b9bddcb1cfb3c006d0137529469f18bd2f71f09d466b"
+    },
+    {
+      "file": "travel_expenses_guard_offline_models.tar.gz.part-04",
+      "bytes": 99614720,
+      "sha256": "495a16f2c1608bb24d5c29d15f48b75f2d70fef0a205a4c4bc7f71fef0885c77"
+    },
+    {
+      "file": "travel_expenses_guard_offline_models.tar.gz.part-05",
+      "bytes": 99614720,
+      "sha256": "1df2250307691032e7a1f389d5bc8760ca1a82875857e88e74a296da049e7d57"
+    },
+    {
+      "file": "travel_expenses_guard_offline_models.tar.gz.part-06",
+      "bytes": 71680,
+      "sha256": "34f833b253a27468157e05c1821205177325675fa0b3a4d78f4315806d5636e0"
+    }
+  ]
+}

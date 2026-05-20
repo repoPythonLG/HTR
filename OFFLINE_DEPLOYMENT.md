@@ -2,9 +2,37 @@
 
 This application can run with all document extraction assets local. The only expected remote dependency is the configured OpenAI-compatible vLLM/Qwen endpoint used by the chat tab.
 
+## Self-contained model archive
+
+The repository includes a split archive under:
+
+```text
+offline_models/
+```
+
+Each archive part is kept below GitHub's 100 MB normal-file limit. The manifest records the expected file sizes and SHA-256 hashes.
+
+On startup, `start_app.py` checks whether `backend/data/models` contains the required Docling and EasyOCR files. If they are missing, it automatically runs:
+
+```bash
+python scripts/restore_offline_models.py
+```
+
+You can also restore manually:
+
+```bash
+python scripts/restore_offline_models.py --force
+```
+
+To verify the bundled chunks and restored model folder:
+
+```bash
+python scripts/restore_offline_models.py --verify-only
+```
+
 ## Download extraction artifacts before disconnecting
 
-Run this while internet is still available:
+If the bundled archive ever needs to be regenerated, run this while internet is still available:
 
 ```bash
 python scripts/download_offline_models.py
