@@ -1,0 +1,325 @@
+{
+  "description": "Large wheel chunks. Reconstructed by restore_wheel_chunks.py before offline install.",
+  "chunk_size": 99614720,
+  "large_wheel_count": 11,
+  "entries": [
+    {
+      "file": "nvidia_cublas_cu12-12.4.5.8-py3-none-manylinux2014_x86_64.whl",
+      "bytes": 363438805,
+      "sha256": "2fc8da60df463fdefa81e323eef2e36489e1c94335b5358bcb38360adf75ac9b",
+      "chunk_size": 99614720,
+      "parts": [
+        {
+          "file": "chunks/nvidia_cublas_cu12-12.4.5.8-py3-none-manylinux2014_x86_64.whl.part000",
+          "bytes": 99614720,
+          "sha256": "802c090140af22e83663136e791b4077018012122d24eaa80ba5bb3b1725c34c"
+        },
+        {
+          "file": "chunks/nvidia_cublas_cu12-12.4.5.8-py3-none-manylinux2014_x86_64.whl.part001",
+          "bytes": 99614720,
+          "sha256": "3f5cfe139eab89e08dfeb289f71c96998051457c0fb2b1163133bfc8b8899059"
+        },
+        {
+          "file": "chunks/nvidia_cublas_cu12-12.4.5.8-py3-none-manylinux2014_x86_64.whl.part002",
+          "bytes": 99614720,
+          "sha256": "0841512c7c9bc194d86ab9da7dc9b24dbd32934ec85b95007d465dfd48fa9b0f"
+        },
+        {
+          "file": "chunks/nvidia_cublas_cu12-12.4.5.8-py3-none-manylinux2014_x86_64.whl.part003",
+          "bytes": 64594645,
+          "sha256": "5f0cd64d3656d3e8470decfa1a818a9236b33ec5b3faa8e420ae24a197aced71"
+        }
+      ]
+    },
+    {
+      "file": "nvidia_cudnn_cu12-9.1.0.70-py3-none-manylinux2014_x86_64.whl",
+      "bytes": 664752741,
+      "sha256": "165764f44ef8c61fcdfdfdbe769d687e06374059fbb388b6c89ecb0e28793a6f",
+      "chunk_size": 99614720,
+      "parts": [
+        {
+          "file": "chunks/nvidia_cudnn_cu12-9.1.0.70-py3-none-manylinux2014_x86_64.whl.part000",
+          "bytes": 99614720,
+          "sha256": "368617221b214760cdaa02a2312165a1f3150f3f35dbe0d733a91dcb201f1162"
+        },
+        {
+          "file": "chunks/nvidia_cudnn_cu12-9.1.0.70-py3-none-manylinux2014_x86_64.whl.part001",
+          "bytes": 99614720,
+          "sha256": "c07d0361479b37fe3080a7c335a7182b18a448387595e8dce32ae54c76d4135d"
+        },
+        {
+          "file": "chunks/nvidia_cudnn_cu12-9.1.0.70-py3-none-manylinux2014_x86_64.whl.part002",
+          "bytes": 99614720,
+          "sha256": "f9ff4b7d45c662a3f4b98dfa6b3a72a9e8a6ad5578e2b12fb2ca3ad922dd57c3"
+        },
+        {
+          "file": "chunks/nvidia_cudnn_cu12-9.1.0.70-py3-none-manylinux2014_x86_64.whl.part003",
+          "bytes": 99614720,
+          "sha256": "33f28612fa89b2b85fab8956bbab71a4e2fc7f128da5c6365fb29e7576e677c4"
+        },
+        {
+          "file": "chunks/nvidia_cudnn_cu12-9.1.0.70-py3-none-manylinux2014_x86_64.whl.part004",
+          "bytes": 99614720,
+          "sha256": "6a63a9445cbb719d24e7eab5172aa47ac47566ede4e40d4eb8800f77b763385e"
+        },
+        {
+          "file": "chunks/nvidia_cudnn_cu12-9.1.0.70-py3-none-manylinux2014_x86_64.whl.part005",
+          "bytes": 99614720,
+          "sha256": "5f66ce865531bee7f4a029d6fc640200c388896aec4cfbdc1c53bdd32920296f"
+        },
+        {
+          "file": "chunks/nvidia_cudnn_cu12-9.1.0.70-py3-none-manylinux2014_x86_64.whl.part006",
+          "bytes": 67064421,
+          "sha256": "276f398c281ed6bec2db7668520d64f427663584064ab80783eecd940388cec9"
+        }
+      ]
+    },
+    {
+      "file": "nvidia_cufft_cu12-11.2.1.3-py3-none-manylinux2014_x86_64.whl",
+      "bytes": 211459117,
+      "sha256": "f083fc24912aa410be21fa16d157fed2055dab1cc4b6934a0e03cba69eb242b9",
+      "chunk_size": 99614720,
+      "parts": [
+        {
+          "file": "chunks/nvidia_cufft_cu12-11.2.1.3-py3-none-manylinux2014_x86_64.whl.part000",
+          "bytes": 99614720,
+          "sha256": "1cd26060ae13231b46e3be7363f33c89b3b73c3d1f94671aed02186e96741c80"
+        },
+        {
+          "file": "chunks/nvidia_cufft_cu12-11.2.1.3-py3-none-manylinux2014_x86_64.whl.part001",
+          "bytes": 99614720,
+          "sha256": "daad6efa79157a5f81e41dcde4a5e010061509defab5606b08a1280925425912"
+        },
+        {
+          "file": "chunks/nvidia_cufft_cu12-11.2.1.3-py3-none-manylinux2014_x86_64.whl.part002",
+          "bytes": 12229677,
+          "sha256": "3263ceda4636a65a5f5cb31e963c8feee825ab4903b2dbc818cc7111a682ab18"
+        }
+      ]
+    },
+    {
+      "file": "nvidia_cusolver_cu12-11.6.1.9-py3-none-manylinux2014_x86_64.whl",
+      "bytes": 127936057,
+      "sha256": "19e33fa442bcfd085b3086c4ebf7e8debc07cfe01e11513cc6d332fd918ac260",
+      "chunk_size": 99614720,
+      "parts": [
+        {
+          "file": "chunks/nvidia_cusolver_cu12-11.6.1.9-py3-none-manylinux2014_x86_64.whl.part000",
+          "bytes": 99614720,
+          "sha256": "02e4d26d3cdda3f7fc88f7029f537c61164be67ddc2472eea48ebc2adb49bc49"
+        },
+        {
+          "file": "chunks/nvidia_cusolver_cu12-11.6.1.9-py3-none-manylinux2014_x86_64.whl.part001",
+          "bytes": 28321337,
+          "sha256": "8cf604eb9f4166a8ad63a43cdaf2f3323bbcd51243a89702b836fa8045651408"
+        }
+      ]
+    },
+    {
+      "file": "nvidia_cusparse_cu12-12.3.1.170-py3-none-manylinux2014_x86_64.whl",
+      "bytes": 207454763,
+      "sha256": "ea4f11a2904e2a8dc4b1833cc1b5181cde564edd0d5cd33e3c168eff2d1863f1",
+      "chunk_size": 99614720,
+      "parts": [
+        {
+          "file": "chunks/nvidia_cusparse_cu12-12.3.1.170-py3-none-manylinux2014_x86_64.whl.part000",
+          "bytes": 99614720,
+          "sha256": "2c9996cf31cbab91f2d83b195907afac86b97e026277835f422f0fe65cf4d9b5"
+        },
+        {
+          "file": "chunks/nvidia_cusparse_cu12-12.3.1.170-py3-none-manylinux2014_x86_64.whl.part001",
+          "bytes": 99614720,
+          "sha256": "5d7c94910f4989c871256b80087d47a2ab4d4f0388a8005a8d977ffa6d48094a"
+        },
+        {
+          "file": "chunks/nvidia_cusparse_cu12-12.3.1.170-py3-none-manylinux2014_x86_64.whl.part002",
+          "bytes": 8225323,
+          "sha256": "0dc4af4a1eabc2f101ff33bdd5a49199c44ba3f782748f8477c046e7c2fbfb90"
+        }
+      ]
+    },
+    {
+      "file": "nvidia_cusparselt_cu12-0.6.2-py3-none-manylinux2014_x86_64.whl",
+      "bytes": 150057751,
+      "sha256": "df2c24502fd76ebafe7457dbc4716b2fec071aabaed4fb7691a201cde03704d9",
+      "chunk_size": 99614720,
+      "parts": [
+        {
+          "file": "chunks/nvidia_cusparselt_cu12-0.6.2-py3-none-manylinux2014_x86_64.whl.part000",
+          "bytes": 99614720,
+          "sha256": "eb90d555fc398e68278506dd3573b8089b3895974cc086faf0c471504eb0bd88"
+        },
+        {
+          "file": "chunks/nvidia_cusparselt_cu12-0.6.2-py3-none-manylinux2014_x86_64.whl.part001",
+          "bytes": 50443031,
+          "sha256": "2c2b8525036ee1726d2fded25a6147b6fbc89c7827165b1e8c0a6e649379a19c"
+        }
+      ]
+    },
+    {
+      "file": "nvidia_nccl_cu12-2.21.5-py3-none-manylinux2014_x86_64.whl",
+      "bytes": 188654414,
+      "sha256": "8579076d30a8c24988834445f8d633c697d42397e92ffc3f63fa26766d25e0a0",
+      "chunk_size": 99614720,
+      "parts": [
+        {
+          "file": "chunks/nvidia_nccl_cu12-2.21.5-py3-none-manylinux2014_x86_64.whl.part000",
+          "bytes": 99614720,
+          "sha256": "30a11cc9a5816a3341dedf9a3a6d0a88d46cb4c51467d79d50a3ab28b96fc423"
+        },
+        {
+          "file": "chunks/nvidia_nccl_cu12-2.21.5-py3-none-manylinux2014_x86_64.whl.part001",
+          "bytes": 89039694,
+          "sha256": "a0830a3b8f9c0beafc41d1ef8cc49e75b6f8f012f5e2c729229976da0f7206d5"
+        }
+      ]
+    },
+    {
+      "file": "torch-2.6.0+cu124-cp310-cp310-linux_x86_64.whl",
+      "bytes": 768431694,
+      "sha256": "7f2ba7f7c0459320a521696f6b5bccc187f59890b23c9dfb6c49b0b87c6bfc97",
+      "chunk_size": 99614720,
+      "parts": [
+        {
+          "file": "chunks/torch-2.6.0+cu124-cp310-cp310-linux_x86_64.whl.part000",
+          "bytes": 99614720,
+          "sha256": "6fe96ac42fcfd22e9e72ad616e61bff175d89987beb83b842e61134475adad9c"
+        },
+        {
+          "file": "chunks/torch-2.6.0+cu124-cp310-cp310-linux_x86_64.whl.part001",
+          "bytes": 99614720,
+          "sha256": "32a3ae3776d5b97aeab7b3591bf787a089dc6c2db253acfcec112aed60568c0b"
+        },
+        {
+          "file": "chunks/torch-2.6.0+cu124-cp310-cp310-linux_x86_64.whl.part002",
+          "bytes": 99614720,
+          "sha256": "2fd558281ca56b5bb8adb528af291fd7aec0ce3f89ed863a37ea12cf1b62003d"
+        },
+        {
+          "file": "chunks/torch-2.6.0+cu124-cp310-cp310-linux_x86_64.whl.part003",
+          "bytes": 99614720,
+          "sha256": "0cfcbff2a7c1b348e345f0b1e183e3a8982bd5169fd76fc6c88d5b3356420fa6"
+        },
+        {
+          "file": "chunks/torch-2.6.0+cu124-cp310-cp310-linux_x86_64.whl.part004",
+          "bytes": 99614720,
+          "sha256": "081eccbe4cc3134eaa2b21e629bf7d8701e6947c480b8095911bdbeac403b794"
+        },
+        {
+          "file": "chunks/torch-2.6.0+cu124-cp310-cp310-linux_x86_64.whl.part005",
+          "bytes": 99614720,
+          "sha256": "2cdd8414beaf30aef29e536c41787e7c6e0a96b3fd641d84f042d8bf0330a322"
+        },
+        {
+          "file": "chunks/torch-2.6.0+cu124-cp310-cp310-linux_x86_64.whl.part006",
+          "bytes": 99614720,
+          "sha256": "4cc33e7a25602af5177319121222a8cd651ee8e9c2fd3211a0b6b42a5c5be407"
+        },
+        {
+          "file": "chunks/torch-2.6.0+cu124-cp310-cp310-linux_x86_64.whl.part007",
+          "bytes": 71128654,
+          "sha256": "654865e14b8bb37d23cf161109d08b201e409d126beae9b84ff92e0ecec9b55b"
+        }
+      ]
+    },
+    {
+      "file": "torch-2.6.0-cp310-cp310-manylinux1_x86_64.whl",
+      "bytes": 766685561,
+      "sha256": "6860df13d9911ac158f4c44031609700e1eba07916fff62e21e6ffa0a9e01961",
+      "chunk_size": 99614720,
+      "parts": [
+        {
+          "file": "chunks/torch-2.6.0-cp310-cp310-manylinux1_x86_64.whl.part000",
+          "bytes": 99614720,
+          "sha256": "0bdeb87be40ad16e120af309160bb860c9a2af35d10c5a6cd80a2ad12196de12"
+        },
+        {
+          "file": "chunks/torch-2.6.0-cp310-cp310-manylinux1_x86_64.whl.part001",
+          "bytes": 99614720,
+          "sha256": "61eba803b0973b687afa6ecbd2d8ebf38858ac16fbeceb18391cd56b86f4694f"
+        },
+        {
+          "file": "chunks/torch-2.6.0-cp310-cp310-manylinux1_x86_64.whl.part002",
+          "bytes": 99614720,
+          "sha256": "95ba17cee66d5e79a157aa738bcd93a636f2e81405e65689bfae308b214551b0"
+        },
+        {
+          "file": "chunks/torch-2.6.0-cp310-cp310-manylinux1_x86_64.whl.part003",
+          "bytes": 99614720,
+          "sha256": "69d81321e67765a342704684b5cc1742920b0f405347329bcd3a3e3991d5d831"
+        },
+        {
+          "file": "chunks/torch-2.6.0-cp310-cp310-manylinux1_x86_64.whl.part004",
+          "bytes": 99614720,
+          "sha256": "e3a4cbd40e8dafa77222278188969a5f8ca41aa1e82bdd1375e784e7d692dfb4"
+        },
+        {
+          "file": "chunks/torch-2.6.0-cp310-cp310-manylinux1_x86_64.whl.part005",
+          "bytes": 99614720,
+          "sha256": "19d28c13f875f1e81b204b86345d6e80fad699c3e4851f4c6d417272f0fed7be"
+        },
+        {
+          "file": "chunks/torch-2.6.0-cp310-cp310-manylinux1_x86_64.whl.part006",
+          "bytes": 99614720,
+          "sha256": "631c9c13240153c8bcf27343e840ca93b0a3a245706b608bfc37f4f897e4ebbe"
+        },
+        {
+          "file": "chunks/torch-2.6.0-cp310-cp310-manylinux1_x86_64.whl.part007",
+          "bytes": 69382521,
+          "sha256": "ad1c9547e74657008dd2a360101f7fb8a58426646a7cd5110dc165a18fec32e5"
+        }
+      ]
+    },
+    {
+      "file": "triton-3.2.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+      "bytes": 253090354,
+      "sha256": "b3e54983cd51875855da7c68ec05c05cf8bb08df361b1d5b69e05e40b0c9bd62",
+      "chunk_size": 99614720,
+      "parts": [
+        {
+          "file": "chunks/triton-3.2.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.part000",
+          "bytes": 99614720,
+          "sha256": "bd4baa7e4ad3e9f82168b4a4875226504467ab9ff26f5921561b358a16d67cf7"
+        },
+        {
+          "file": "chunks/triton-3.2.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.part001",
+          "bytes": 99614720,
+          "sha256": "5288ca8548c2fc54cc1f65b769f3453285917319f8cf0766dea35c0c0fe77eec"
+        },
+        {
+          "file": "chunks/triton-3.2.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.part002",
+          "bytes": 53860914,
+          "sha256": "ded341c62a36230e05431fc42654360fd5b00397699cd903e96ab6cd21159474"
+        }
+      ]
+    },
+    {
+      "file": "vllm-0.8.5-cp38-abi3-manylinux1_x86_64.whl",
+      "bytes": 326421025,
+      "sha256": "74bfe92953bee1269c1e1c27827bc156777751cdd6a3457ee8e27dd8ebf1e247",
+      "chunk_size": 99614720,
+      "parts": [
+        {
+          "file": "chunks/vllm-0.8.5-cp38-abi3-manylinux1_x86_64.whl.part000",
+          "bytes": 99614720,
+          "sha256": "e6f48abc4f3b99bf16acded2b34c5e5a78bcc83bd24b004f1329b46ca8afaa4a"
+        },
+        {
+          "file": "chunks/vllm-0.8.5-cp38-abi3-manylinux1_x86_64.whl.part001",
+          "bytes": 99614720,
+          "sha256": "7463807cb92703f65d422c743ed1937d9b40b24d52920c66364986e6cefb5341"
+        },
+        {
+          "file": "chunks/vllm-0.8.5-cp38-abi3-manylinux1_x86_64.whl.part002",
+          "bytes": 99614720,
+          "sha256": "894dfba6df39b9bc50a7b44d4856fce1fdab342b2ff0aff6c3c0e172ff93918c"
+        },
+        {
+          "file": "chunks/vllm-0.8.5-cp38-abi3-manylinux1_x86_64.whl.part003",
+          "bytes": 27576865,
+          "sha256": "aa39d23e3cbc050d1a45b86be58b9066be8395d76c45f0d5ea0824b7f691a4b8"
+        }
+      ]
+    }
+  ]
+}

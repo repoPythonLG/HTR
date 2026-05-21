@@ -1,0 +1,12 @@
+{
+  "frontend_port_env": "CDSW_APP_PORT",
+  "frontend_host": "127.0.0.1",
+  "frontend_port": 8090,
+  "backend_host": "127.0.0.1",
+  "backend_port": 8001,
+  "chat_vllm_base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+  "chat_vllm_model": "qwen3-coder-next",
+  "chat_vllm_api_key": "replace-with-your-key",
+  "chat_vllm_temperature": 0.2,
+  "chat_vllm_timeout_seconds": 45
+}

@@ -77,3 +77,27 @@ CHAT_VLLM_API_KEY=<key>
 ```
 
 No local LLM weights are required unless you choose to run vLLM locally.
+
+If you do not want to set environment variables, copy the example config and edit the chat fields:
+
+```bash
+cp cloudera_app_config.example.json cloudera_app_config.json
+```
+
+Then set:
+
+```json
+{
+  "chat_vllm_base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+  "chat_vllm_model": "qwen3-coder-next",
+  "chat_vllm_api_key": "your-key"
+}
+```
+
+Start normally:
+
+```bash
+python start_app.py
+```
+
+`cloudera_app_config.json` is intentionally ignored by Git because it can contain API keys.

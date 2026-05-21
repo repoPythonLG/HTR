@@ -36,6 +36,11 @@ def load_config(path: Path) -> dict[str, Any]:
         "vite_hmr": False,
         "log_dir": ".data/logs",
         "pid_file": ".data/travel_expenses_guard.pid",
+        "chat_vllm_base_url": "",
+        "chat_vllm_model": "qwen3-coder-next",
+        "chat_vllm_api_key": "",
+        "chat_vllm_temperature": 0.2,
+        "chat_vllm_timeout_seconds": 45,
     }
     if path.exists():
         with path.open("r", encoding="utf-8") as handle:
@@ -393,6 +398,16 @@ def main() -> int:
     backend_env.setdefault("TORCH_HOME", str(offline_model_root / "torch"))
     backend_env.setdefault("HF_HUB_OFFLINE", "1")
     backend_env.setdefault("TRANSFORMERS_OFFLINE", "1")
+    chat_config_env = {
+        "CHAT_VLLM_BASE_URL": config.get("chat_vllm_base_url"),
+        "CHAT_VLLM_MODEL": config.get("chat_vllm_model"),
+        "CHAT_VLLM_API_KEY": config.get("chat_vllm_api_key"),
+        "CHAT_VLLM_TEMPERATURE": config.get("chat_vllm_temperature"),
+        "CHAT_VLLM_TIMEOUT_SECONDS": config.get("chat_vllm_timeout_seconds"),
+    }
+    for env_name, value in chat_config_env.items():
+        if value is not None and str(value).strip():
+            backend_env[env_name] = str(value).strip()
 
     node_bin = select_node_bin(config)
     npm_bin = select_npm_bin(config, node_bin)

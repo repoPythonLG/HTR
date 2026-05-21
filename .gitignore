@@ -11,6 +11,7 @@ __pycache__/
 *.sqlite3
 .env
 backend/.env
+cloudera_app_config.json
 /data/
 /backend/data/
 
@@ -21,3 +22,7 @@ frontend/dist/
 
 # macOS
 .DS_Store
+
+# Offline vLLM wheelhouse: large raw wheels are restored from pytorch/chunks.
+# Small wheels are force-added intentionally.
+pytorch/*.whl
